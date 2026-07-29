@@ -43,14 +43,43 @@ O VolundOS sempre usa a **última release** do repositório apontado.
 
 ## O artefato de release
 
-A release não é o código-fonte: é um `.zip` com o projeto **e o `node_modules`
-instalado**, que é o que permite o ambiente de um App novo subir em segundos em
-vez de pagar uma instalação de dependências a cada criação.
+A release não é o código-fonte: é o `scaffold.zip`, com o projeto **e o
+`node_modules` instalado**. É isso que permite o ambiente de um App novo subir em
+segundos em vez de pagar uma instalação de dependências a cada criação.
 
-> **Ainda não há automação de release nesta versão do repositório.** O pipeline
-> que monta e publica o artefato a cada tag é a entrega seguinte; até ela existir,
-> o artefato precisa ser montado e anexado à release manualmente. Não conte com a
-> automação num fork feito a partir deste ponto.
+Publicar é criar uma tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+O pipeline (`.github/workflows/release.yml`) roda a verificação completa, o build,
+monta o artefato e cria a release já com o `scaffold.zip` anexado. Quem publica é
+o próprio workflow, com a credencial nativa do GitHub Actions — **um fork não
+precisa configurar segredo nenhum**, basta criar a tag.
+
+Rodar a mesma tag de novo substitui o asset, em vez de falhar.
+
+Para montar o artefato localmente (o CI faz isso em cada PR, como validação):
+
+```bash
+npm ci && ./scripts/pack.sh
+```
+
+O script recusa artefato incompleto: valida que `package.json`, `.gitignore`, o
+manifest e o binário do Next estão dentro, que o nome sentinela do pacote não
+mudou, e que a infraestrutura deste repositório (`.github/`, `scripts/`) **não**
+viajou para dentro do app gerado.
+
+## Verificação automática
+
+`.github/workflows/ci.yml` roda em todo PR e push na `main`: `npm run check`
+(formatação, lint, tipos, testes), build de produção e montagem do artefato.
+
+Este repositório é a base de **todo** App criado no VolundOS — um erro aqui se
+multiplica por app gerado, e é por isso que o gate é o mesmo que o agente roda
+dentro do container.
 
 ## Contrato
 
