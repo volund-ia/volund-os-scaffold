@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    // ES2022 porque o alvo real é Node 20+ e navegadores atuais — o ES2017 do
+    // template do create-next-app só faz o bundler transpilar à toa.
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    // Projeto é TypeScript: um `.js` solto passaria sem checagem nenhuma.
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    // `import type` explícito: deixa claro o que é apagado na compilação e
+    // evita import de tipo arrastando módulo para o bundle.
+    "verbatimModuleSyntax": true,
+    // Pega a classe de bug mais comum em código gerado: ler `arr[0]` ou
+    // `registro[chave]` como se sempre existisse. Com isto o tipo vira
+    // `T | undefined` e o acesso precisa ser tratado.
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
