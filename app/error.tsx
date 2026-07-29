@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 /**
  * Erro não tratado em qualquer página. Sem este arquivo o Next mostra a tela
  * genérica dele, que não diz nada ao usuário e nem oferece saída.
@@ -15,7 +17,14 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  console.error("[app] erro não tratado:", error);
+  // O log vai num efeito, não no corpo do componente: render pode acontecer mais
+  // de uma vez para o mesmo erro (o React descarta e repete renders), e o mesmo
+  // problema apareceria duplicado no log — atrapalhando justamente quem está
+  // investigando.
+  useEffect(() => {
+    console.error("[app] erro não tratado:", error);
+  }, [error]);
+
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
       <h1 className="text-2xl font-semibold">Algo deu errado</h1>

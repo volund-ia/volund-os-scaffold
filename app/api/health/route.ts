@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const res = await query<{ now: string }>("select now() as now");
+    // `timestamptz` chega como `Date`: o `pg` converte por padrão (pg-types
+    // registra um parser para os OIDs de data). Tipar como `string` mentiria, e
+    // a mentira só apareceria em quem tentasse usar o valor como texto.
+    const res = await query<{ now: Date }>("select now() as now");
     return Response.json({ ok: true, db: res.rows[0]?.now ?? null });
   } catch (err) {
     // O detalhe do erro vai para o log do provedor (visível junto do deploy) e

@@ -11,7 +11,7 @@
     "styling": "tailwind"
   },
   "runtime": {
-    "node": ">=20",
+    "node": ">=20.9.0",
     "port": 3000,
     "envRequired": ["DATABASE_URL"]
   },

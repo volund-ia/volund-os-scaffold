@@ -28,11 +28,16 @@ export function getPool(): Pool {
     // explicitamente — exceto em localhost, onde não há TLS.
     //
     // ATENÇÃO ao `sslmode`: diferente do libpq, o `pg` VERIFICA a cadeia de
-    // certificados com `sslmode=require` (medido: provedor com CA própria
-    // falha com "self-signed certificate in certificate chain"). Provedores de
-    // certificado público (o Postgres provisionado pela plataforma) passam. Se
-    // o seu banco usa CA privada, troque para `sslmode=no-verify` na URL —
-    // ainda criptografa, só não valida a cadeia.
+    // certificados com `sslmode=require` (medido: provedor com CA própria falha
+    // com "self-signed certificate in certificate chain"). Provedores de
+    // certificado público — como o Postgres provisionado pela plataforma —
+    // passam.
+    //
+    // Se o seu banco usa CA privada, forneça a CA em vez de desligar a
+    // verificação: aponte `sslrootcert` para o certificado da autoridade (na
+    // URL, ou via `ssl: { ca: ... }` aqui). Desligar a validação da cadeia
+    // mantém o tráfego cifrado mas abre a porta para intermediário — e num
+    // scaffold isso viraria o padrão de todo app gerado.
     const hasSslMode = /[?&]sslmode=/.test(connectionString);
     const isLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(connectionString);
     globalThis.__volundPgPool = new Pool({

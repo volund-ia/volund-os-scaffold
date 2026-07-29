@@ -44,11 +44,13 @@ O VolundOS sempre usa a **última release** do repositório apontado.
 ## O artefato de release
 
 A release não é o código-fonte: é um `.zip` com o projeto **e o `node_modules`
-instalado**, que é o que permite o ambiente subir em segundos em vez de pagar uma
-instalação a cada App novo.
+instalado**, que é o que permite o ambiente de um App novo subir em segundos em
+vez de pagar uma instalação de dependências a cada criação.
 
-O `.zip` é montado e publicado pelo pipeline do repositório a cada tag `vX.Y.Z`.
-Se você forkou, o mesmo pipeline vem no fork — basta criar uma tag.
+> **Ainda não há automação de release nesta versão do repositório.** O pipeline
+> que monta e publica o artefato a cada tag é a entrega seguinte; até ela existir,
+> o artefato precisa ser montado e anexado à release manualmente. Não conte com a
+> automação num fork feito a partir deste ponto.
 
 ## Contrato
 
