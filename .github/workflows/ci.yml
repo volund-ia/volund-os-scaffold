@@ -1,0 +1,50 @@
+name: CI
+
+# Este repositório é a BASE de todo App criado no VolundOS: um erro aqui se
+# multiplica por app gerado. Então o mesmo `npm run check` que o agente roda
+# dentro do container roda aqui, em cada mudança.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Actions é gratuito em repositório público, mas duas execuções da mesma branch
+# não servem para nada — a última é a que vale.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Qualidade e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Mesma major declarada em `.nvmrc` e em `engines`.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Formatação, lint, tipos e testes — o comando único que o `AGENTS.md`
+      # manda rodar antes de dizer que terminou.
+      - name: Verificar (formatação, lint, tipos, testes)
+        run: npm run check
+
+      # O build é o gate que o servidor de desenvolvimento não dá: `next dev`
+      # serve páginas que `next build` recusaria.
+      - name: Build de produção
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      # O artefato é o produto deste repositório. Se `pack.sh` quebrar, quebra
+      # aqui — e não na hora de publicar uma release.
+      - name: Montar o artefato (validação)
+        run: ./scripts/pack.sh /tmp/scaffold.zip

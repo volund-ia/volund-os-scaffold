@@ -1,0 +1,90 @@
+name: Release
+
+# Publica o artefato que o VolundOS consome: um zip com a aplicação E o
+# `node_modules` instalado.
+#
+# Quem cria a release é ESTE workflow, com o `GITHUB_TOKEN` nativo do Actions —
+# não um token de aplicação externa. Isso importa por dois motivos: o upload de
+# asset por token de GitHub App é recusado em alguns caminhos, e um fork ganha o
+# pipeline funcionando sem precisar configurar credencial nenhuma. Basta criar a
+# tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a publicar (ex: v1.0.0). Precisa existir."
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publicar artefato
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Uma release ruim não é só um artefato ruim: ela vira a base de todo App
+      # criado a partir dela. O mesmo gate do CI roda antes de publicar.
+      - name: Verificar (formatação, lint, tipos, testes)
+        run: npm run check
+
+      - name: Build de produção
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Montar o artefato
+        run: ./scripts/pack.sh scaffold.zip
+
+      - name: Resumo do artefato
+        run: |
+          SIZE=$(stat -c '%s' scaffold.zip)
+          CONTRACT=$(node -p "require('./volund-scaffold.json').contract")
+          {
+            echo "### Artefato"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Tamanho | $((SIZE / 1048576)) MiB |"
+            echo "| Arquivos | $(unzip -l scaffold.zip | tail -1 | awk '{print $2}') |"
+            echo "| Contrato | v${CONTRACT} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # `gh release create` já anexa o asset. `--generate-notes` monta o corpo a
+      # partir dos commits desde a release anterior (o GitHub resolve o ponto de
+      # partida), e o `--notes` é PREPENDIDO a essas notas — então a release
+      # sempre abre dizendo qual artefato e qual contrato ela carrega.
+      - name: Publicar release com o artefato
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          CONTRACT=$(node -p "require('./volund-scaffold.json').contract")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Reexecução da mesma tag: substitui o asset em vez de falhar.
+            gh release upload "$TAG" scaffold.zip --clobber
+          else
+            gh release create "$TAG" scaffold.zip \
+              --title "$TAG" \
+              --generate-notes \
+              --notes "Artefato: \`scaffold.zip\` (contrato v${CONTRACT}), com \`node_modules\` instalado."
+          fi
