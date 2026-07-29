@@ -22,6 +22,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `actions/checkout` grava o GITHUB_TOKEN no .git/config por padrão, e
+          # o `npm ci` abaixo executa lifecycle scripts das dependências — um
+          # pacote comprometido leria o token dali. Nada aqui empurra para o
+          # repositório, então a credencial não precisa sobreviver ao checkout.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
