@@ -14,6 +14,12 @@ function Tabs({
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
+      // `orientation` também vai para o primitivo, não só para o atributo: o
+      // `TabsRoot` do Base UI usa esse valor na navegação por teclado e no
+      // `aria-orientation`. Sem repassar, `<Tabs orientation="vertical">` ficava
+      // vertical no visual e horizontal no teclado. Se este arquivo for
+      // regenerado pelo CLI do shadcn, confira se a linha voltou.
+      orientation={orientation}
       className={cn("group/tabs flex gap-2 data-horizontal:flex-col", className)}
       {...props}
     />
