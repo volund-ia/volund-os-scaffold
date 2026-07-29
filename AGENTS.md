@@ -38,6 +38,36 @@ automaticamente.
 | `migrations/` | Todo SQL aplicado ao banco, um arquivo por mudança                     |
 | `tests/`      | Testes, com `.test.ts` no nome                                         |
 
+## Interface
+
+A biblioteca de componentes é **shadcn/ui** (sobre Base UI), já instalada. Um
+conjunto base vive em `components/ui/`: `button`, `card`, `input`, `label`,
+`textarea`, `select`, `checkbox`, `dialog`, `dropdown-menu`, `tabs`, `badge`,
+`separator`, `skeleton` e `sonner`.
+
+**Use o que já existe antes de escrever CSS.** Precisa de um componente que não
+está aí?
+
+```bash
+npx shadcn add <componente>   # CLI local, versão travada no lockfile
+npm run format                # o código gerado não sai no formato do projeto
+```
+
+Use o CLI **local** (sem `@latest`): ele é a mesma versão que gerou os
+componentes que já estão aqui, então o que você adicionar combina com o resto.
+
+Os componentes de `components/ui/` são a base; o que for específico da aplicação
+vai em `components/`, compondo os de baixo.
+
+**Cores e espaçamento saem dos tokens do tema** (`bg-background`,
+`text-foreground`, `bg-primary`, `border-border`…), definidos em
+`app/globals.css`. Não escreva cor literal: o tema tem modo claro e escuro, e cor
+fixa quebra um dos dois.
+
+**Não adicione webfont.** O `layout.tsx` usa a pilha do sistema de propósito —
+`next/font/google` faz o build baixar arquivos de fonte da rede. Se o produto
+exigir uma fonte específica, é decisão do usuário, não default.
+
 ## Regras que não se negociam
 
 **Toda rota de API valida a entrada.** Use `parseJsonBody`/`parseSearchParams`

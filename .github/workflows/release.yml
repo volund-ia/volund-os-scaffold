@@ -33,6 +33,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          # Mesmo motivo do CI, e aqui pesa mais: este job tem `contents: write`.
+          # O `gh release create` usa o GH_TOKEN da env, não a credencial do git,
+          # então desligar a persistência não tira nada — só fecha a porta para
+          # um lifecycle script do `npm ci` ler o token do .git/config.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
