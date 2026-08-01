@@ -1,8 +1,8 @@
 {
   "$schema": "https://os.volund.com.br/schemas/volund-scaffold-1.json",
-  "contract": 1,
+  "contract": 2,
   "name": "volund-os-scaffold",
-  "description": "Next.js (App Router) + Postgres, com node_modules pré-instalado no artefato de release.",
+  "description": "Next.js (App Router) + Postgres + autenticação da plataforma (OIDC), com node_modules pré-instalado no artefato de release.",
   "stack": {
     "framework": "next",
     "router": "app",
@@ -13,7 +13,12 @@
   "runtime": {
     "node": ">=20.9.0",
     "port": 3000,
-    "envRequired": ["DATABASE_URL"]
+    "envRequired": [
+      "DATABASE_URL",
+      "VOLUND_OIDC_ISSUER",
+      "VOLUND_OIDC_CLIENT_ID",
+      "VOLUND_OIDC_CLIENT_SECRET"
+    ]
   },
   "commands": {
     "dev": "npm run dev",
