@@ -213,6 +213,17 @@ test("returnTo só aceita caminho interno", () => {
   // exatamente como `//`, e passam despercebidas numa leitura rápida.
   assert.equal(safeReturnTo("/\\outro.site"), "/");
   assert.equal(safeReturnTo("\\\\outro.site"), "/");
+  // TAB, CR e LF são REMOVIDOS do endereço pelo navegador. Cada um destes vira
+  // `//outro.site` na hora da interpretação — ou seja, depois de já ter passado
+  // por uma checagem ingênua das duas primeiras posições.
+  assert.equal(safeReturnTo("/\t/outro.site"), "/");
+  assert.equal(safeReturnTo("/\n/outro.site"), "/");
+  assert.equal(safeReturnTo("/\r/outro.site"), "/");
+  assert.equal(safeReturnTo("/\t\\outro.site"), "/");
+  assert.equal(safeReturnTo("/\r\n/outro.site"), "/");
+  // Caminho legítimo com esses caracteres no meio: o que volta é o que o
+  // navegador veria, e não a string crua — conferir uma e usar outra é o buraco.
+  assert.equal(safeReturnTo("/pai\tnel"), "/painel");
   assert.equal(safeReturnTo(null), "/");
   assert.equal(safeReturnTo(""), "/");
 });

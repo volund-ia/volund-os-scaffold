@@ -442,13 +442,27 @@ export function clearedCookie(name: string, requestUrl: string | URL): string {
  * redirecionamento aberto, e um App autenticado é justamente o lugar onde isso
  * seria usado para levar quem acabou de entrar para uma página que imita a dele.
  *
- * As duas primeiras posições são conferidas juntas porque o navegador trata
- * `\` como `/` ao resolver endereço: `//outro.site` **e** `/\outro.site` saem do
- * domínio, e barrar só o primeiro deixa o segundo passar — a barra invertida
- * atravessa `startsWith("//")` sem nem parecer suspeita.
+ * ## Validar exatamente o que o navegador vai ver
+ *
+ * Duas armadilhas, e as duas vêm da mesma raiz: **o navegador não lê a string
+ * que nós conferimos**. Ele a normaliza antes.
+ *
+ * 1. `\` conta como `/` ao resolver endereço, então `//outro.site` e
+ *    `/\outro.site` saem do domínio do mesmo jeito. Barrar só o primeiro deixa
+ *    o segundo passar sem nem parecer suspeito.
+ * 2. TAB, CR e LF são **removidos** do endereço (WHATWG URL). Isso significa que
+ *    `/\t/outro.site` chega aqui com três caracteres na frente — passa por
+ *    `startsWith("/")`, passa pela checagem das duas primeiras posições — e
+ *    vira `//outro.site` na hora em que o navegador o interpreta. O
+ *    redirecionamento aberto acontece depois da nossa aprovação.
+ *
+ * Por isso a normalização vem ANTES das checagens, e é o valor normalizado que
+ * volta: o que foi conferido e o que será usado precisam ser a mesma string.
  */
 export function safeReturnTo(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith("/")) return "/";
-  if (/^[/\\]{2}/.test(raw)) return "/";
-  return raw;
+  if (!raw) return "/";
+  const normalizado = raw.replace(/[\t\r\n]/g, "");
+  if (!normalizado.startsWith("/")) return "/";
+  if (/^[/\\]{2}/.test(normalizado)) return "/";
+  return normalizado;
 }
