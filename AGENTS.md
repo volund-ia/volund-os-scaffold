@@ -13,7 +13,8 @@ aqui — siga-o.
   mostra o erro real. Para conferir, chame a aplicação: `curl -s
 http://localhost:3000/` ou `curl -s http://localhost:3000/api/...`.
 - `DATABASE_URL` é injetada pela plataforma. Nunca a escreva em arquivo, nunca a
-  imprima, nunca a versione.
+  imprima, nunca a versione. O mesmo vale para as três variáveis
+  `VOLUND_OIDC_*` da autenticação.
 - Precisa de uma biblioteca? `npm install <pacote>` — **uma de cada vez**. Duas
   instalações em paralelo no mesmo `node_modules` corrompem a árvore de
   dependências.
@@ -35,8 +36,55 @@ automaticamente.
 | `components/` | Componentes de interface reutilizáveis, um por arquivo                 |
 | `lib/`        | Acesso a dados, integrações, funções de apoio                          |
 | `types/`      | Tipos usados por mais de um módulo                                     |
+| `lib/auth/`   | Autenticação da plataforma. **Pronta — não reimplemente.** Veja abaixo |
 | `migrations/` | Todo SQL aplicado ao banco, um arquivo por mudança                     |
 | `tests/`      | Testes, com `.test.ts` no nome                                         |
+
+## Autenticação
+
+**Já existe, e é da plataforma.** A identidade de quem usa este App é a mesma da
+organização no VolundOS. Você **não** implementa login, cadastro, senha,
+recuperação de senha, tabela de usuários nem sessão — nada disso é seu, e criar
+uma população de contas paralela deixaria de fora exatamente quem a plataforma já
+autorizou.
+
+**Toda rota nasce protegida.** O `proxy.ts` exige sessão em tudo, com uma única
+exceção enumerada em `lib/auth/route-policy.ts`: a vitrine (`/`) e as duas rotas
+de bootstrap do login. Uma página nova que você criar exige sessão sem você fazer
+nada.
+
+Para usar a identidade:
+
+```ts
+// Em página (Server Component): manda para o login e volta depois.
+import { requireSession } from "@/lib/auth/server";
+const session = await requireSession("/onde-estou");
+
+// Em rota de API ou Server Action: devolve a resposta pronta quando barra.
+import { guard } from "@/lib/auth/server";
+const gate = await guard();
+if (!gate.ok) return gate.response;
+// gate.session.userId, .orgId, .email, .name
+
+// Onde a ausência de sessão é aceitável (a vitrine, por exemplo):
+import { getSession } from "@/lib/auth/server";
+const session = await getSession(); // Session | null
+```
+
+**Sempre cheque no servidor, em cada limite.** Esconder um botão não protege
+nada: quem chama a rota direto nunca viu o botão. E o proxy protege _rotas_ — uma
+Server Action é um POST para a rota onde ela é usada, e mover um arquivo pode
+tirar a cobertura sem nenhum aviso.
+
+**Sobre permissões:** `can()` existe em `lib/auth/permissions.ts` e nega por
+default, mas o catálogo de papéis por App ainda não existe na plataforma — hoje
+todo token vem com a lista de permissões vazia, então `can()` devolve `false`
+para todo mundo. Proteja com sessão (`guard()`); use `can()` só quando as
+concessões existirem. Se você trancar uma tela com `can("algo")` agora, ninguém
+entra — nem quem criou o App.
+
+Se o usuário pedir "coloca um login no app", a resposta é que ele já tem: mostre
+a `/` (vitrine, pública) e a `/painel` (protegida), que são o exemplo pronto.
 
 ## Interface
 

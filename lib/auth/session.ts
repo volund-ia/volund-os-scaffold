@@ -1,0 +1,405 @@
+/**
+ * Sessão do App: o que fica no cookie, como ele é lido e como é renovado.
+ *
+ * A sessão é **selada no cookie**, sem tabela de sessão no banco. É o que
+ * permite a camada existir sem impor schema ao App — o agente desenha o banco
+ * dele sem esbarrar em tabela de infraestrutura. O preço é o teto de tamanho do
+ * cookie, e é por isso que só o essencial entra aqui.
+ */
+
+import {
+  AUTH_CALLBACK_PATH,
+  AUTH_SCOPES,
+  HANDSHAKE_TTL_SECONDS,
+  SESSION_COOKIE,
+  type AuthConfig,
+} from "./config";
+import { seal, unseal } from "./crypto";
+import { loadDiscovery, loadJwks } from "./discovery";
+import { readExpiryWithoutVerifying, verifyAccessToken, verifyIdToken } from "./jwt";
+
+const SESSION_PURPOSE = "session";
+const HANDSHAKE_PURPOSE = "handshake";
+
+/** Trinta dias: o teto do refresh no provedor. O cookie não vive além dele. */
+const SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+
+/**
+ * Renova quando falta menos que isto para o access token expirar, em vez de
+ * esperar ele morrer. Sem a folga, uma requisição que chega no último segundo de
+ * vida do token seria atendida com um token que expira no meio dela.
+ */
+const REFRESH_SKEW_SECONDS = 60;
+
+/** O que vai selado no cookie. */
+export interface SessionPayload {
+  accessToken: string;
+  refreshToken: string;
+  /** `exp` do access token, em segundos. Cópia para decidir renovação sem parse. */
+  accessExp: number;
+}
+
+/** O que o código da aplicação enxerga. */
+export interface Session {
+  userId: string;
+  orgId: string;
+  appId: string;
+  email: string | null;
+  name: string | null;
+  roles: string[];
+  permissions: string[];
+  /** Para chamar serviços em nome do usuário. Não coloque isto em HTML. */
+  accessToken: string;
+}
+
+export interface Handshake {
+  state: string;
+  nonce: string;
+  codeVerifier: string;
+  redirectUri: string;
+  /** Caminho interno para onde voltar depois do login. Sempre relativo. */
+  returnTo: string;
+  expiresAt: number;
+}
+
+export async function sealHandshake(
+  handshake: Handshake,
+  config: AuthConfig,
+): Promise<string> {
+  return seal(handshake, config.clientSecret, HANDSHAKE_PURPOSE);
+}
+
+export async function readHandshake(
+  sealed: string | undefined | null,
+  config: AuthConfig,
+  now = Date.now(),
+): Promise<Handshake | null> {
+  const handshake = await unseal<Handshake>(
+    sealed,
+    config.clientSecret,
+    HANDSHAKE_PURPOSE,
+  );
+  if (!handshake) return null;
+  if (typeof handshake.expiresAt !== "number" || handshake.expiresAt < now) return null;
+  return handshake;
+}
+
+export async function sealSession(
+  payload: SessionPayload,
+  config: AuthConfig,
+): Promise<string> {
+  return seal(payload, config.clientSecret, SESSION_PURPOSE);
+}
+
+/**
+ * Abre o cookie e **verifica o access token de verdade** — assinatura, emissor,
+ * validade, `azp` e `aud`.
+ *
+ * Confiar no selo do cookie sozinho seria confiar no que este App escreveu no
+ * passado; verificar o token é o que faz a identidade continuar vindo do
+ * provedor a cada requisição. É também onde a recusa acontece: um token de
+ * outro App, mesmo assinado pela mesma chave e selado com um segredo roubado,
+ * não passa por `azp`.
+ */
+export async function readSession(
+  sealed: string | undefined | null,
+  config: AuthConfig,
+): Promise<Session | null> {
+  const payload = await unseal<SessionPayload>(
+    sealed,
+    config.clientSecret,
+    SESSION_PURPOSE,
+  );
+  if (!payload?.accessToken) return null;
+
+  const keys = await loadJwks(config.issuer);
+  const result = await verifyAccessToken(payload.accessToken, {
+    keys,
+    issuer: config.issuer,
+    clientId: config.clientId,
+  });
+  if (!result.ok) return null;
+
+  const { claims } = result;
+  return {
+    userId: claims.sub,
+    orgId: claims.org_id ?? "",
+    appId: claims.app_id ?? "",
+    email: claims.email ?? null,
+    name: claims.name ?? null,
+    roles: Array.isArray(claims.roles) ? claims.roles : [],
+    permissions: Array.isArray(claims.permissions) ? claims.permissions : [],
+    accessToken: payload.accessToken,
+  };
+}
+
+/** A sessão precisa ser renovada antes de ser usada nesta requisição? */
+export function needsRefresh(payload: SessionPayload, nowSeconds: number): boolean {
+  return payload.accessExp - REFRESH_SKEW_SECONDS <= nowSeconds;
+}
+
+export async function readSealedPayload(
+  sealed: string | undefined | null,
+  config: AuthConfig,
+): Promise<SessionPayload | null> {
+  return unseal<SessionPayload>(sealed, config.clientSecret, SESSION_PURPOSE);
+}
+
+interface TokenEndpointResponse {
+  access_token?: string;
+  refresh_token?: string;
+  id_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
+/**
+ * Autenticação do client no token endpoint por `client_secret_basic`.
+ *
+ * Os dois campos vão percent-encoded (RFC 6749 §2.3.1) — um segredo com `:` ou
+ * caractere não-ASCII quebraria a decodificação do outro lado sem isso.
+ */
+function basicAuthHeader(config: AuthConfig): string {
+  const raw = `${encodeURIComponent(config.clientId)}:${encodeURIComponent(config.clientSecret)}`;
+  return `Basic ${Buffer.from(raw, "utf8").toString("base64")}`;
+}
+
+async function callTokenEndpoint(
+  config: AuthConfig,
+  body: URLSearchParams,
+): Promise<TokenEndpointResponse> {
+  const discovery = await loadDiscovery(config.issuer);
+  const response = await fetch(discovery.token_endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      authorization: basicAuthHeader(config),
+      accept: "application/json",
+    },
+    body: body.toString(),
+    // O token endpoint não é cacheável (RFC 6749 §5.1) e a resposta carrega
+    // credencial: qualquer camada guardando isto entregaria a sessão ao próximo.
+    cache: "no-store",
+  });
+
+  const data = (await response.json().catch(() => ({}))) as TokenEndpointResponse;
+  if (!response.ok || data.error) {
+    // A descrição vem do provedor e é segura para log — não carrega o segredo,
+    // que nunca aparece na resposta. Para o usuário, quem chama devolve genérico.
+    throw new Error(
+      `token endpoint recusou: ${data.error ?? response.status} ${data.error_description ?? ""}`.trim(),
+    );
+  }
+  if (!data.access_token || !data.refresh_token) {
+    throw new Error("token endpoint respondeu sem `access_token` ou `refresh_token`");
+  }
+  return data;
+}
+
+function toPayload(data: TokenEndpointResponse, nowSeconds: number): SessionPayload {
+  const accessToken = data.access_token as string;
+  return {
+    accessToken,
+    refreshToken: data.refresh_token as string,
+    // O `exp` do próprio token manda; `expires_in` é a estimativa do provedor e
+    // o relógio daqui pode divergir do dele.
+    accessExp:
+      readExpiryWithoutVerifying(accessToken) ?? nowSeconds + (data.expires_in ?? 600),
+  };
+}
+
+/**
+ * Troca o código de autorização por tokens e valida o ID token.
+ *
+ * O `nonce` é conferido aqui, contra o valor sorteado no início do fluxo — é o
+ * que amarra este ID token ao pedido que este navegador iniciou.
+ */
+export async function exchangeCode(params: {
+  config: AuthConfig;
+  code: string;
+  handshake: Handshake;
+  nowSeconds?: number;
+}): Promise<SessionPayload> {
+  const { config, code, handshake } = params;
+  const nowSeconds = params.nowSeconds ?? Math.floor(Date.now() / 1000);
+
+  const data = await callTokenEndpoint(
+    config,
+    new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: handshake.redirectUri,
+      code_verifier: handshake.codeVerifier,
+    }),
+  );
+
+  if (!data.id_token) throw new Error("token endpoint respondeu sem `id_token`");
+
+  const keys = await loadJwks(config.issuer);
+  const idResult = await verifyIdToken(data.id_token, {
+    keys,
+    issuer: config.issuer,
+    clientId: config.clientId,
+    nonce: handshake.nonce,
+  });
+  if (!idResult.ok) throw new Error(`ID token recusado: ${idResult.reason}`);
+
+  const accessResult = await verifyAccessToken(data.access_token as string, {
+    keys,
+    issuer: config.issuer,
+    clientId: config.clientId,
+  });
+  if (!accessResult.ok)
+    throw new Error(`access token recusado: ${accessResult.reason}`);
+
+  return toPayload(data, nowSeconds);
+}
+
+/**
+ * Rotaciona o refresh token. O provedor devolve um novo a cada uso e derruba a
+ * família inteira se o anterior reaparecer — guardar o antigo depois disto
+ * derrubaria a própria sessão no uso seguinte.
+ */
+export async function refreshSession(params: {
+  config: AuthConfig;
+  refreshToken: string;
+  nowSeconds?: number;
+}): Promise<SessionPayload> {
+  const nowSeconds = params.nowSeconds ?? Math.floor(Date.now() / 1000);
+  const data = await callTokenEndpoint(
+    params.config,
+    new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: params.refreshToken,
+    }),
+  );
+  return toPayload(data, nowSeconds);
+}
+
+/**
+ * Revoga o refresh token no provedor. Best-effort **de propósito**.
+ *
+ * Sair do App é uma ação local: apagar o cookie encerra a sessão aqui, e é isso
+ * que o usuário pediu. A revogação impede que o refresh guardado continue
+ * rendendo token novo por até trinta dias — mas se o provedor estiver fora do
+ * ar, travar o logout seria deixar a pessoa presa dentro do App por causa de uma
+ * limpeza que ela não pediu.
+ */
+export async function revokeRefreshToken(
+  config: AuthConfig,
+  refreshToken: string,
+): Promise<void> {
+  try {
+    const discovery = await loadDiscovery(config.issuer);
+    if (!discovery.revocation_endpoint) return;
+    await fetch(discovery.revocation_endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: basicAuthHeader(config),
+      },
+      body: new URLSearchParams({
+        token: refreshToken,
+        token_type_hint: "refresh_token",
+      }).toString(),
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("[auth] falha ao revogar o refresh token no provedor:", err);
+  }
+}
+
+/** Monta a URL de autorização a partir do que a descoberta anunciou. */
+export async function buildAuthorizationUrl(params: {
+  config: AuthConfig;
+  handshake: Handshake;
+  codeChallenge: string;
+}): Promise<string> {
+  const discovery = await loadDiscovery(params.config.issuer);
+  const url = new URL(discovery.authorization_endpoint);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", params.config.clientId);
+  url.searchParams.set("redirect_uri", params.handshake.redirectUri);
+  url.searchParams.set("scope", AUTH_SCOPES.join(" "));
+  url.searchParams.set("state", params.handshake.state);
+  url.searchParams.set("nonce", params.handshake.nonce);
+  url.searchParams.set("code_challenge", params.codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  return url.toString();
+}
+
+/**
+ * `redirect_uri` desta requisição.
+ *
+ * Derivada da origem por onde o usuário chegou, porque a plataforma registra uma
+ * entrada por endereço conhecido do App (produção, prévia, domínio próprio,
+ * sandbox de desenvolvimento) — usar a origem da requisição faz o login
+ * funcionar em todas sem configuração por ambiente. A conferência do lado do
+ * provedor continua sendo por igualdade exata contra a lista registrada: uma
+ * origem que ele não conhece é recusada lá, não aqui.
+ */
+export function callbackUriFor(requestUrl: string | URL): string {
+  return new URL(AUTH_CALLBACK_PATH, requestUrl).toString();
+}
+
+interface CookieOptions {
+  maxAge: number;
+  secure: boolean;
+}
+
+function serializeCookie(name: string, value: string, options: CookieOptions): string {
+  const parts = [
+    `${name}=${value}`,
+    "Path=/",
+    "HttpOnly",
+    // `Lax` e não `Strict`: o callback chega como navegação de topo vinda do
+    // provedor, e `Strict` esconderia o cookie do aperto de mão exatamente na
+    // requisição que precisa dele.
+    "SameSite=Lax",
+    `Max-Age=${options.maxAge}`,
+  ];
+  if (options.secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+/** `Secure` em produção; sem ele o cookie não viajaria no `http` local. */
+function isSecureRequest(requestUrl: string | URL): boolean {
+  return new URL(requestUrl).protocol === "https:";
+}
+
+export function sessionCookie(value: string, requestUrl: string | URL): string {
+  return serializeCookie(SESSION_COOKIE, value, {
+    maxAge: SESSION_COOKIE_MAX_AGE,
+    secure: isSecureRequest(requestUrl),
+  });
+}
+
+export function handshakeCookie(
+  name: string,
+  value: string,
+  requestUrl: string | URL,
+): string {
+  return serializeCookie(name, value, {
+    maxAge: HANDSHAKE_TTL_SECONDS,
+    secure: isSecureRequest(requestUrl),
+  });
+}
+
+export function clearedCookie(name: string, requestUrl: string | URL): string {
+  return serializeCookie(name, "", { maxAge: 0, secure: isSecureRequest(requestUrl) });
+}
+
+/**
+ * Destino de retorno depois do login.
+ *
+ * Só caminho interno: um `returnTo` que aceitasse endereço absoluto viraria
+ * redirecionamento aberto, e um App autenticado é justamente o lugar onde isso
+ * seria usado para levar quem acabou de entrar para uma página que imita a dele.
+ * `//outro.site` é barrado explicitamente — o parser trata como protocolo
+ * relativo e o navegador sai do domínio.
+ */
+export function safeReturnTo(raw: string | null | undefined): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
+  return raw;
+}
