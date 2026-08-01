@@ -38,6 +38,14 @@ test("liberação é por igualdade, não por prefixo", () => {
   assert.equal(isPublicRoute("/api/auth/callback/extra"), false);
 });
 
+test("arquivo em public/ exige sessão até ser enumerado", () => {
+  // Comportamento deliberado, não esquecimento: `public/` é onde se larga
+  // arquivo sem pensar, e dispensar a pasta inteira publicaria o PDF que alguém
+  // deixou lá. Um asset que a vitrine precisa entra na lista, um por linha.
+  assert.equal(isPublicRoute("/imagens/capa.png"), false);
+  assert.equal(isPublicRoute("/relatorio-interno.pdf"), false);
+});
+
 test("barra final não cria um caminho diferente", () => {
   assert.equal(isPublicRoute("/api/auth/callback/"), true);
   assert.equal(isPublicRoute("/"), true);

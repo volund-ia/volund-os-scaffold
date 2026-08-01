@@ -12,6 +12,23 @@
  *
  * Acrescentar uma rota aqui é uma decisão de segurança. Ela deve vir com o
  * motivo escrito ao lado.
+ *
+ * ## Arquivo em `public/` também exige sessão — e isso é deliberado
+ *
+ * O `matcher` do `proxy.ts` dispensa `_next/static` e `_next/image` (artefatos
+ * de build) e os metadados de sempre. **Um arquivo que você ponha em `public/`
+ * NÃO está dispensado**: `/imagens/capa.png` cai no portão e é negado sem
+ * sessão, como qualquer outra rota.
+ *
+ * Parece incômodo até lembrar o que a alternativa custa. `public/` é onde se
+ * larga arquivo sem pensar — o PDF que alguém mandou por e-mail, o CSV de um
+ * relatório. Dispensar a pasta inteira publicaria tudo isso para a internet, e
+ * o dono do App descobriria pelo incidente. Um destino de asset que a vitrine
+ * precisa é uma decisão consciente, então ele entra na lista abaixo, com o
+ * motivo ao lado — igual às outras entradas.
+ *
+ * Sintoma quando alguém esquece: a imagem da vitrine não carrega (o portão
+ * responde 401 para quem pede `image/*`). Não é falha silenciosa.
  */
 
 import { AUTH_CALLBACK_PATH, AUTH_LOGIN_PATH } from "./config";
@@ -26,6 +43,9 @@ export const PUBLIC_ROUTES: readonly string[] = [
   // Retorno do provedor. Protegê-lo faria o login nunca terminar: ele é
   // chamado antes de a sessão existir, e é ele quem a estabelece.
   AUTH_CALLBACK_PATH,
+  // Asset que a vitrine precisa mostrar a quem ainda não entrou vem aqui, um
+  // por linha e com o motivo ao lado. Exemplo:
+  //   "/imagens/capa.png",  // ilustração da vitrine
 ];
 
 /**

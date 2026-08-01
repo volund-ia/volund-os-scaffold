@@ -71,6 +71,11 @@ import { getSession } from "@/lib/auth/server";
 const session = await getSession(); // Session | null
 ```
 
+**Arquivo em `public/` também exige sessão.** Se a vitrine precisar de uma
+imagem, acrescente o caminho dela à lista de `lib/auth/route-policy.ts` — a pasta
+inteira não é liberada de propósito, porque é onde arquivo interno acaba parando.
+O sintoma de esquecer é a imagem não carregar, não um vazamento.
+
 **Sempre cheque no servidor, em cada limite.** Esconder um botão não protege
 nada: quem chama a rota direto nunca viu o botão. E o proxy protege _rotas_ — uma
 Server Action é um POST para a rota onde ela é usada, e mover um arquivo pode
