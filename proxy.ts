@@ -95,13 +95,16 @@ export async function proxy(request: NextRequest) {
     // Falha explícita, nomeando a variável — e fechada. Degradar para acesso
     // aberto aqui transformaria um erro de configuração em um sistema exposto.
     const variavel = err instanceof MissingAuthEnvError ? err.variable : null;
+    // A variável que falta é o que o requisito manda dizer e o que permite
+    // consertar. O resto — quais são as outras, como o ambiente é montado —
+    // fica no log: quem recebe esta resposta pode ser qualquer visitante, e
+    // enumerar a configuração da plataforma para ele não ajuda ninguém a
+    // consertar nada.
     console.error("[auth] App sem configuração de autenticação:", err);
     return NextResponse.json(
       {
         error: "autenticação não configurada",
         ...(variavel ? { variavel } : {}),
-        detalhe:
-          "Este App exige as variáveis VOLUND_OIDC_ISSUER, VOLUND_OIDC_CLIENT_ID e VOLUND_OIDC_CLIENT_SECRET. No VolundOS elas são injetadas pela plataforma.",
       },
       { status: 503, headers: { "cache-control": "no-store" } },
     );

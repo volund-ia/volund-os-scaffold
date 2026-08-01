@@ -11,7 +11,13 @@ import type { AuthConfig } from "../lib/auth/config";
 import { base64UrlEncode, seal } from "../lib/auth/crypto";
 import { resetDiscoveryCacheForTests } from "../lib/auth/discovery";
 import type { PublicJwk } from "../lib/auth/jwt";
-import { readSession, safeReturnTo, type SessionPayload } from "../lib/auth/session";
+import {
+  needsRefresh,
+  readHandshake,
+  readSession,
+  safeReturnTo,
+  type SessionPayload,
+} from "../lib/auth/session";
 
 const ISSUER = "https://provedor.exemplo.test";
 const APP_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -203,6 +209,42 @@ test("returnTo só aceita caminho interno", () => {
   assert.equal(safeReturnTo("/painel?a=1"), "/painel?a=1");
   assert.equal(safeReturnTo("https://outro.site/phishing"), "/");
   assert.equal(safeReturnTo("//outro.site"), "/");
+  // O navegador trata `\` como `/` ao resolver endereço: estas saem do domínio
+  // exatamente como `//`, e passam despercebidas numa leitura rápida.
+  assert.equal(safeReturnTo("/\\outro.site"), "/");
+  assert.equal(safeReturnTo("\\\\outro.site"), "/");
   assert.equal(safeReturnTo(null), "/");
   assert.equal(safeReturnTo(""), "/");
+});
+
+test("a renovação começa antes de o token morrer, não depois", () => {
+  const agoraS = agora();
+  const com = (exp: number): SessionPayload => ({
+    accessToken: "irrelevante-aqui",
+    refreshToken: "r",
+    accessExp: exp,
+  });
+  // A folga existe para que uma requisição que chega no último suspiro do token
+  // não seja atendida com um token que expira no meio dela.
+  assert.equal(needsRefresh(com(agoraS + 600), agoraS), false);
+  assert.equal(needsRefresh(com(agoraS + 30), agoraS), true);
+  assert.equal(needsRefresh(com(agoraS - 1), agoraS), true);
+});
+
+test("aperto de mão expirado não é aceito", async () => {
+  // Dez minutos é tempo de completar um login. Passado isso o pedido não existe
+  // mais, e um cookie de handshake sobrevivente seria uma janela aberta.
+  const vencido = await seal(
+    {
+      state: "s",
+      nonce: "n",
+      codeVerifier: "v",
+      redirectUri: "https://app.exemplo.test/api/auth/callback",
+      returnTo: "/",
+      expiresAt: Date.now() - 1_000,
+    },
+    configA.clientSecret,
+    "handshake",
+  );
+  assert.equal(await readHandshake(vencido, configA), null);
 });

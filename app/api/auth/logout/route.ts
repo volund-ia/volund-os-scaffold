@@ -1,6 +1,7 @@
 import { SESSION_COOKIE, readAuthConfig } from "@/lib/auth/config";
 import {
   clearedCookie,
+  readCookie,
   readSealedPayload,
   revokeRefreshToken,
 } from "@/lib/auth/session";
@@ -17,16 +18,6 @@ import {
  * sessão de quem apenas abrisse uma página de terceiro.
  */
 export const dynamic = "force-dynamic";
-
-function readCookie(request: Request, name: string): string | undefined {
-  const header = request.headers.get("cookie");
-  if (!header) return undefined;
-  for (const part of header.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === name) return rest.join("=");
-  }
-  return undefined;
-}
 
 export async function POST(request: Request) {
   const headers = new Headers({

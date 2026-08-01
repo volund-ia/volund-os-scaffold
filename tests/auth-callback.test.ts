@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { GET } from "../app/api/auth/callback/route";
+import type { AuthConfig } from "../lib/auth/config";
+import { sealHandshake } from "../lib/auth/session";
 
 const AMBIENTE = {
   VOLUND_OIDC_ISSUER: "https://provedor.exemplo.test",
@@ -13,7 +15,20 @@ const AMBIENTE = {
   VOLUND_OIDC_CLIENT_SECRET: "segredo-de-teste",
 };
 
-function comAmbiente<T>(vars: Record<string, string | undefined>, fn: () => T): T {
+/**
+ * Roda `fn` com o ambiente trocado e restaura depois.
+ *
+ * `await fn()` e não `fn()`: sem o `await`, o `finally` roda quando o handler
+ * DEVOLVE a promessa, não quando ela resolve — e o ambiente voltaria ao normal
+ * com o handler ainda em execução. Hoje passaria por sorte (a leitura da
+ * configuração acontece antes do primeiro `await` interno); no dia em que a
+ * ordem interna mudasse, o teste de 503 leria o ambiente restaurado e deixaria
+ * de verificar o que diz verificar.
+ */
+async function comAmbiente<T>(
+  vars: Record<string, string | undefined>,
+  fn: () => T | Promise<T>,
+): Promise<T> {
   const anterior: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(vars)) {
     anterior[k] = process.env[k];
@@ -21,7 +36,7 @@ function comAmbiente<T>(vars: Record<string, string | undefined>, fn: () => T): 
     else process.env[k] = v;
   }
   try {
-    return fn();
+    return await fn();
   } finally {
     for (const [k, v] of Object.entries(anterior)) {
       if (v === undefined) delete process.env[k];
@@ -50,6 +65,34 @@ test("apaga o aperto de mão ao recusar", async () => {
   const res = await comAmbiente(AMBIENTE, () => GET(pedido("?code=abc&state=xyz")));
   // Deixá-lo vivo daria uma segunda chance a quem estivesse testando `state`.
   assert.match(res.headers.get("set-cookie") ?? "", /volund_auth_handshake=;/);
+});
+
+test("state divergente é recusado, mesmo com aperto de mão válido", async () => {
+  // É o que amarra a resposta ao pedido que ESTE navegador iniciou. Sem a
+  // conferência, um código obtido em outro contexto viraria sessão aqui.
+  const config: AuthConfig = {
+    issuer: AMBIENTE.VOLUND_OIDC_ISSUER,
+    clientId: AMBIENTE.VOLUND_OIDC_CLIENT_ID,
+    clientSecret: AMBIENTE.VOLUND_OIDC_CLIENT_SECRET,
+  };
+  const selado = await sealHandshake(
+    {
+      state: "o-state-que-eu-sorteei",
+      nonce: "n",
+      codeVerifier: "v",
+      redirectUri: "https://app.exemplo.test/api/auth/callback",
+      returnTo: "/painel",
+      expiresAt: Date.now() + 60_000,
+    },
+    config,
+  );
+
+  const res = await comAmbiente(AMBIENTE, () =>
+    GET(pedido("?code=abc&state=outro-state", `volund_auth_handshake=${selado}`)),
+  );
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as { motivo: string };
+  assert.match(body.motivo, /não confere/);
 });
 
 test("resposta incompleta do provedor é recusada", async () => {

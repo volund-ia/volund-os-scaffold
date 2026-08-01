@@ -18,7 +18,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { AUTH_LOGIN_PATH, SESSION_COOKIE, readAuthConfig } from "./config";
+import {
+  AUTH_LOGIN_PATH,
+  SESSION_COOKIE,
+  readAuthConfig,
+  type AuthConfig,
+} from "./config";
 import { can } from "./permissions";
 import { readSession, type Session } from "./session";
 
@@ -30,7 +35,7 @@ import { readSession, type Session } from "./session";
  * configuração precisa gritar é no proxy, que é quem decide o acesso.
  */
 export async function getSession(): Promise<Session | null> {
-  let config;
+  let config: AuthConfig;
   try {
     config = readAuthConfig();
   } catch {

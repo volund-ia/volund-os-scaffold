@@ -145,6 +145,34 @@ export async function readSealedPayload(
   return unseal<SessionPayload>(sealed, config.clientSecret, SESSION_PURPOSE);
 }
 
+/**
+ * Lê um cookie do cabeçalho cru.
+ *
+ * Existe aqui, e não em cada rota, porque as rotas de autenticação precisam ler
+ * cookie **sem** `next/headers` — o helper do Next exige contexto de requisição
+ * do framework, e sem ele o handler não pode ser exercitado em teste. Uma cópia
+ * por rota já começou a acontecer; centralizar impede que uma delas divirja.
+ */
+export function readCookie(request: Request, name: string): string | undefined {
+  const header = request.headers.get("cookie");
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return rest.join("=");
+  }
+  return undefined;
+}
+
+/**
+ * Teto de espera pelo provedor de identidade.
+ *
+ * `fetch` não tem timeout por default: um provedor lento ou travado deixaria a
+ * requisição do usuário pendurada até o limite da plataforma. Cinco segundos é
+ * folgado para uma chamada servidor-a-servidor e curto o bastante para virar
+ * erro tratável em vez de página que não carrega.
+ */
+const PROVIDER_TIMEOUT_MS = 5_000;
+
 interface TokenEndpointResponse {
   access_token?: string;
   refresh_token?: string;
@@ -181,6 +209,7 @@ async function callTokenEndpoint(
     // O token endpoint não é cacheável (RFC 6749 §5.1) e a resposta carrega
     // credencial: qualquer camada guardando isto entregaria a sessão ao próximo.
     cache: "no-store",
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
 
   const data = (await response.json().catch(() => ({}))) as TokenEndpointResponse;
@@ -304,6 +333,9 @@ export async function revokeRefreshToken(
         token_type_hint: "refresh_token",
       }).toString(),
       cache: "no-store",
+      // Sair não pode ficar preso esperando o provedor: o cookie já caiu antes
+      // desta chamada, e a revogação é o zelo extra.
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
   } catch (err) {
     console.error("[auth] falha ao revogar o refresh token no provedor:", err);
@@ -363,9 +395,22 @@ function serializeCookie(name: string, value: string, options: CookieOptions): s
   return parts.join("; ");
 }
 
-/** `Secure` em produção; sem ele o cookie não viajaria no `http` local. */
+/**
+ * `Secure` em tudo, MENOS no endereço local de desenvolvimento.
+ *
+ * A pergunta natural seria "o protocolo desta requisição é https?", e é a
+ * pergunta errada: atrás de um proxy reverso — que é como o App roda em
+ * produção — a requisição chega ao Next como `http`, e o `https` só existe no
+ * `x-forwarded-proto`, que é um cabeçalho que o cliente pode forjar. Decidir por
+ * ele significaria que basta mandar `x-forwarded-proto: http` para o cookie de
+ * sessão sair sem `Secure` e passar a viajar em texto claro.
+ *
+ * Por isso a regra é invertida: `Secure` é o default, e a exceção é o host local
+ * (onde não há TLS e o cookie simplesmente não seria aceito com `Secure`).
+ */
 function isSecureRequest(requestUrl: string | URL): boolean {
-  return new URL(requestUrl).protocol === "https:";
+  const { hostname } = new URL(requestUrl);
+  return hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "[::1]";
 }
 
 export function sessionCookie(value: string, requestUrl: string | URL): string {
@@ -396,10 +441,14 @@ export function clearedCookie(name: string, requestUrl: string | URL): string {
  * Só caminho interno: um `returnTo` que aceitasse endereço absoluto viraria
  * redirecionamento aberto, e um App autenticado é justamente o lugar onde isso
  * seria usado para levar quem acabou de entrar para uma página que imita a dele.
- * `//outro.site` é barrado explicitamente — o parser trata como protocolo
- * relativo e o navegador sai do domínio.
+ *
+ * As duas primeiras posições são conferidas juntas porque o navegador trata
+ * `\` como `/` ao resolver endereço: `//outro.site` **e** `/\outro.site` saem do
+ * domínio, e barrar só o primeiro deixa o segundo passar — a barra invertida
+ * atravessa `startsWith("//")` sem nem parecer suspeita.
  */
 export function safeReturnTo(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
+  if (!raw || !raw.startsWith("/")) return "/";
+  if (/^[/\\]{2}/.test(raw)) return "/";
   return raw;
 }

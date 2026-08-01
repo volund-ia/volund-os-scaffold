@@ -41,8 +41,20 @@ interface Cached<T> {
 const discoveryCache = new Map<string, Cached<Discovery>>();
 const jwksCache = new Map<string, Cached<PublicJwk[]>>();
 
+/**
+ * Teto de espera. `fetch` não tem timeout por default, e estas chamadas estão no
+ * caminho do login, do callback e da renovação de sessão sempre que o cache está
+ * frio. Sem limite, um provedor travado pendura a requisição do usuário — e o
+ * recuo para o cache velho abaixo só cobre falha explícita, não uma chamada que
+ * nunca resolve.
+ */
+const FETCH_TIMEOUT_MS = 5_000;
+
 async function fetchJson(url: string, what: string): Promise<unknown> {
-  const response = await fetch(url, { headers: { accept: "application/json" } });
+  const response = await fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`${what} respondeu ${response.status} em ${url}`);
   }

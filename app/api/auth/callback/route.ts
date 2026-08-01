@@ -7,6 +7,7 @@ import {
 import {
   clearedCookie,
   exchangeCode,
+  readCookie,
   readHandshake,
   safeReturnTo,
   sealSession,
@@ -26,17 +27,6 @@ import {
  * lado é por igualdade exata (RFC 9700).
  */
 export const dynamic = "force-dynamic";
-
-/** Lê um cookie do cabeçalho cru — sem `next/headers`, para poder ser testado. */
-function readCookie(request: Request, name: string): string | undefined {
-  const header = request.headers.get("cookie");
-  if (!header) return undefined;
-  for (const part of header.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === name) return rest.join("=");
-  }
-  return undefined;
-}
 
 function failure(request: Request, motivo: string, status = 400): Response {
   return Response.json(
@@ -67,7 +57,10 @@ export async function GET(request: Request) {
       );
     }
     console.error("[auth] falha ao ler a configuração:", err);
-    return Response.json({ error: "autenticação indisponível" }, { status: 500 });
+    return Response.json(
+      { error: "autenticação indisponível" },
+      { status: 500, headers: { "cache-control": "no-store" } },
+    );
   }
 
   const url = new URL(request.url);

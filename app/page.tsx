@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -39,14 +39,18 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          {/* Base UI usa `render` para trocar o elemento renderizado — o
-              `asChild` do Radix não existe nesta versão do shadcn. */}
-          <Button render={<a href="/api/auth/login?returnTo=%2Fpainel" />}>
+          {/* Âncora com a APARÊNCIA de botão, e não `Button` renderizado como
+              âncora: o componente leva junto atributos de botão (`type`,
+              `tabindex`) que não existem em `<a>`. Para AÇÃO — enviar, salvar —
+              use `Button`; e, se precisar trocar o elemento dele, é pela prop
+              `render` do Base UI (o `asChild` do Radix não existe nesta versão
+              do shadcn), como faz o botão de sair em `app/painel/page.tsx`. */}
+          <a className={buttonVariants()} href="/api/auth/login?returnTo=%2Fpainel">
             Entrar
-          </Button>
-          <Button variant="outline" render={<a href="/api/health" />}>
+          </a>
+          <a className={buttonVariants({ variant: "outline" })} href="/api/health">
             Checar conexão com o banco
-          </Button>
+          </a>
         </CardContent>
       </Card>
     </main>

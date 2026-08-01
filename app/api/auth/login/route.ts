@@ -3,6 +3,7 @@ import {
   HANDSHAKE_TTL_SECONDS,
   MissingAuthEnvError,
   readAuthConfig,
+  type AuthConfig,
 } from "@/lib/auth/config";
 import { codeChallengeS256, randomToken } from "@/lib/auth/crypto";
 import {
@@ -28,24 +29,26 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  let config;
+  let config: AuthConfig;
   try {
     config = readAuthConfig();
   } catch (err) {
     if (err instanceof MissingAuthEnvError) {
       // Falha explícita nomeando a variável — nunca degradar para acesso aberto.
-      console.error(`[auth] configuração ausente: ${err.variable}`);
+      // O nome da variável é o que o requisito pede e o que permite consertar; a
+      // mensagem completa (que enumera as três e conta como o ambiente é
+      // montado) fica no log, porque esta rota é pública.
+      console.error(`[auth] configuração ausente: ${err.variable} — ${err.message}`);
       return Response.json(
-        {
-          error: "autenticação não configurada",
-          variavel: err.variable,
-          detalhe: err.message,
-        },
+        { error: "autenticação não configurada", variavel: err.variable },
         { status: 503, headers: { "cache-control": "no-store" } },
       );
     }
     console.error("[auth] falha ao ler a configuração:", err);
-    return Response.json({ error: "autenticação indisponível" }, { status: 500 });
+    return Response.json(
+      { error: "autenticação indisponível" },
+      { status: 500, headers: { "cache-control": "no-store" } },
+    );
   }
 
   const url = new URL(request.url);
