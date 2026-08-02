@@ -90,7 +90,7 @@ no ar**. São dois passos, de donos diferentes:
    permissões e papéis que a aplicação tem, com chaves sem namespace
    (`fechar_mes`). Declarar não concede nada a ninguém.
 2. **A pessoa concede**, na aba Segurança do App. Aí `session.permissions` chega
-   preenchido e `can("fechar_mes")` responde `true` para quem recebeu.
+   preenchido e `can(session, "fechar_mes")` responde `true` para quem recebeu.
 
 Entre os dois passos `can()` nega todo mundo, e isso é o projeto funcionando:
 nenhum acesso nasce implícito. Declare, proteja com `can()` e **diga ao usuário

@@ -56,6 +56,33 @@ test("a orientação desaconselha a lista de administradores dentro do App", () 
   }
 });
 
+test("todo exemplo de `can()` na orientação passa a sessão", () => {
+  // `can(session, permission)`. Um exemplo escrito como `can("fechar_mes")` não
+  // compila em TypeScript e, em JavaScript, deixaria `permission` indefinida —
+  // `can()` devolveria `false` e a ação ficaria bloqueada para todo mundo.
+  //
+  // Aqui isso é pior que um erro de digitação: este texto é INSTRUÇÃO, e o
+  // agente copia o que lê. Um exemplo errado vira código errado no App de
+  // alguém, com o sintoma "protegi a tela e ninguém entra" — a mesma frustração
+  // que mandou dois agentes construírem um RBAC paralelo.
+  for (const arquivo of ORIENTACOES) {
+    const chamadas = [...ler(arquivo).matchAll(/\bcan\(([^)]*)\)/g)]
+      .map((m) => (m[1] ?? "").trim())
+      .filter((args) => args !== "");
+
+    for (const args of chamadas) {
+      // `^session\b` aceita tanto a chamada (`session, "x"`) quanto a própria
+      // declaração da função (`session: Session | null, ...`), que também casa
+      // com o padrão e é legítima.
+      assert.match(
+        args,
+        /^session\b/,
+        `${arquivo}: \`can(${args})\` — falta a sessão; a assinatura é can(session, permission)`,
+      );
+    }
+  }
+});
+
 test("nenhuma orientação afirma, no presente, que o catálogo não existe", () => {
   // A frase que produziu os dois desvios. Pode voltar por descuido num merge ou
   // numa reescrita, e voltaria em silêncio — é comentário.
