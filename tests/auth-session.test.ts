@@ -138,8 +138,9 @@ test("cookie legítimo devolve a identidade do provedor", async () => {
   assert.equal(sessao.orgId, "org-1");
   assert.equal(sessao.appId, APP_A);
   assert.equal(sessao.email, "pessoa@exemplo.test");
-  // Nenhuma permissão concedida enquanto o catálogo não existir — e essa lista
-  // vazia é o que faz `can()` negar por default.
+  // Token sem nenhuma concessão: o catálogo existe, mas ninguém concedeu nada a
+  // esta pessoa ainda. É essa lista vazia que faz `can()` negar por default —
+  // nenhum acesso nasce implícito.
   assert.deepEqual(sessao.permissions, []);
 });
 

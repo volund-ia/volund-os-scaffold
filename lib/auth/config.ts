@@ -34,7 +34,10 @@ export const HANDSHAKE_TTL_SECONDS = 10 * 60;
 
 /**
  * Escopos pedidos. `openid` é obrigatório no provedor; `volund.permissions` é o
- * que traz os claims de autorização quando o catálogo de permissões existir.
+ * que traz os claims de autorização (`roles`/`permissions`) do catálogo do App.
+ * `profile` e `email` são o que fazem `session.name` e `session.email` chegarem
+ * preenchidos — o provedor usa o escopo como portão, e sem eles os claims não
+ * saem.
  */
 export const AUTH_SCOPES = [
   "openid",

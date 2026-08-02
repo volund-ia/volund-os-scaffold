@@ -81,12 +81,31 @@ nada: quem chama a rota direto nunca viu o botão. E o proxy protege _rotas_ —
 Server Action é um POST para a rota onde ela é usada, e mover um arquivo pode
 tirar a cobertura sem nenhum aviso.
 
-**Sobre permissões:** `can()` existe em `lib/auth/permissions.ts` e nega por
-default, mas o catálogo de papéis por App ainda não existe na plataforma — hoje
-todo token vem com a lista de permissões vazia, então `can()` devolve `false`
-para todo mundo. Proteja com sessão (`guard()`); use `can()` só quando as
-concessões existirem. Se você trancar uma tela com `can("algo")` agora, ninguém
-entra — nem quem criou o App.
+**Sobre permissões:** quando o usuário pedir que só algumas pessoas possam fazer
+alguma coisa ("fechar o mês é só comigo e com a Mayara", "o resto do time só
+olha"), o caminho é o catálogo de permissões da plataforma — que **existe e está
+no ar**. São dois passos, de donos diferentes:
+
+1. **Você declara** o catálogo com a ferramenta `report_app_permissions`: as
+   permissões e papéis que a aplicação tem, com chaves sem namespace
+   (`fechar_mes`). Declarar não concede nada a ninguém.
+2. **A pessoa concede**, na aba Segurança do App. Aí `session.permissions` chega
+   preenchido e `can("fechar_mes")` responde `true` para quem recebeu.
+
+Entre os dois passos `can()` nega todo mundo, e isso é o projeto funcionando:
+nenhum acesso nasce implícito. Declare, proteja com `can()` e **diga ao usuário
+que ele precisa conceder na aba Segurança** — é um clique dele, não uma mudança
+de código.
+
+> **Não construa uma lista de administradores dentro do banco do App** — nem por
+> e-mail, nem por id, nem uma "tabela de papéis" própria. Já aconteceu duas
+> vezes: o resultado é uma lista paralela sem auditoria, sem revogação,
+> invisível para quem administra a organização, e que precisa de você toda vez
+> que muda. A pergunta que separa os caminhos é "quem muda quem pode o quê?" —
+> se a resposta for "eu, editando código", está errado.
+
+Proteger com sessão (`guard()`) continua sendo o portão de baixo, e vale para
+todas as rotas por herança. `can()` é o segundo nível.
 
 Se o usuário pedir "coloca um login no app", a resposta é que ele já tem: mostre
 a `/` (vitrine, pública) e a `/painel` (protegida), que são o exemplo pronto.
