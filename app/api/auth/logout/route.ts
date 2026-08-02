@@ -4,6 +4,7 @@ import {
   readCookie,
   readSealedPayload,
   revokeRefreshToken,
+  publicOriginFor,
 } from "@/lib/auth/session";
 
 /**
@@ -21,12 +22,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const headers = new Headers({
-    location: new URL("/", request.url).toString(),
+    // Relativo, e não absoluto de `request.url`: atrás do proxy aquela origem é
+    // a interna, e o navegador seria mandado para `localhost` depois de sair.
+    location: "/",
     "cache-control": "no-store",
   });
   // O cookie cai primeiro e independentemente do resto: o que a pessoa pediu foi
   // sair, e nada abaixo pode impedir isso.
-  headers.append("set-cookie", clearedCookie(SESSION_COOKIE, request.url));
+  headers.append("set-cookie", clearedCookie(SESSION_COOKIE, publicOriginFor(request)));
 
   try {
     const config = readAuthConfig();

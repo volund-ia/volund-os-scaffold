@@ -10,6 +10,7 @@ import {
   buildAuthorizationUrl,
   callbackUriFor,
   handshakeCookie,
+  publicOriginFor,
   safeReturnTo,
   sealHandshake,
   type Handshake,
@@ -52,13 +53,17 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  // A origem PÚBLICA, e não `request.url`: atrás do proxy reverso esta última
+  // traz a porta interna, e o `redirect_uri` montado dela nunca bate com o que a
+  // plataforma registrou — a autorização morre em "endereço não registrado".
+  const origem = publicOriginFor(request);
   const codeVerifier = randomToken(64);
 
   const handshake: Handshake = {
     state: randomToken(),
     nonce: randomToken(),
     codeVerifier,
-    redirectUri: callbackUriFor(request.url),
+    redirectUri: callbackUriFor(origem),
     returnTo: safeReturnTo(url.searchParams.get("returnTo")),
     expiresAt: Date.now() + HANDSHAKE_TTL_SECONDS * 1000,
   };
@@ -77,7 +82,7 @@ export async function GET(request: Request) {
         "set-cookie": handshakeCookie(
           HANDSHAKE_COOKIE,
           await sealHandshake(handshake, config),
-          request.url,
+          origem,
         ),
         "cache-control": "no-store",
       },

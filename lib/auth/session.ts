@@ -375,6 +375,65 @@ export function callbackUriFor(requestUrl: string | URL): string {
   return new URL(AUTH_CALLBACK_PATH, requestUrl).toString();
 }
 
+/**
+ * A origem PÚBLICA desta requisição — a que o navegador realmente usou.
+ *
+ * ## Por que `request.url` não serve
+ *
+ * Em produção e no ambiente de desenvolvimento a aplicação roda atrás de um
+ * proxy reverso. O proxy encaminha para a porta interna, e `request.url` traz
+ * essa origem interna (`http://localhost:3000`) — não o endereço que a pessoa
+ * digitou.
+ *
+ * Isso arrebentava o login inteiro, e de um jeito difícil de ler: a plataforma
+ * registra o endereço PÚBLICO como `redirect_uri` e compara por igualdade exata
+ * (RFC 9700, sem curinga). O `redirect_uri` montado de `request.url` nunca
+ * batia, e a tentativa de entrar morria em "endereço de retorno não registrado"
+ * — com o dedo apontado para o registro, que estava certo.
+ *
+ * ## Sobre confiar em `x-forwarded-host`
+ *
+ * O header é falsificável por quem alcança a aplicação sem passar pelo proxy, e
+ * em geral confiar nele é armadilha. Aqui as duas consequências são contidas:
+ *
+ * 1. O `redirect_uri` derivado dele é conferido pelo PROVEDOR contra a lista
+ *    registrada. Um host forjado não redireciona ninguém para lugar nenhum: ele
+ *    produz uma autorização recusada.
+ * 2. A decisão de `Secure` no cookie continua sendo "sempre, exceto localhost"
+ *    (`isSecureRequest`). Um host forjado qualquer segue recebendo `Secure`.
+ *
+ * O que a função NÃO faz: aceitar `x-forwarded-proto` para REBAIXAR o esquema.
+ * Isso é o que transformaria o header numa forma de tirar o `Secure` do cookie.
+ */
+export function publicOriginFor(request: Request): string {
+  const forwardedHost = firstForwarded(request.headers.get("x-forwarded-host"));
+  const host = forwardedHost ?? request.headers.get("host");
+  if (!host) return new URL(request.url).origin;
+
+  const fallbackProto = new URL(request.url).protocol.replace(":", "");
+  const forwardedProto = firstForwarded(request.headers.get("x-forwarded-proto"));
+  // `https` a menos que o host seja local: um `x-forwarded-proto: http` forjado
+  // não pode fazer a aplicação servir cookie sem `Secure` num site que é HTTPS.
+  const proto = isLocalHost(host) ? (forwardedProto ?? fallbackProto) : "https";
+
+  try {
+    return new URL(`${proto}://${host}`).origin;
+  } catch {
+    return new URL(request.url).origin;
+  }
+}
+
+/** `x-forwarded-*` pode vir com a cadeia inteira (`a, b, c`). Vale o primeiro. */
+function firstForwarded(value: string | null): string | null {
+  const first = value?.split(",")[0]?.trim();
+  return first ? first : null;
+}
+
+function isLocalHost(host: string): boolean {
+  const hostname = host.replace(/:\d+$/, "").toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
 interface CookieOptions {
   maxAge: number;
   secure: boolean;

@@ -12,6 +12,7 @@ import {
   safeReturnTo,
   sealSession,
   sessionCookie,
+  publicOriginFor,
 } from "@/lib/auth/session";
 
 /**
@@ -37,7 +38,7 @@ function failure(request: Request, motivo: string, status = 400): Response {
         // O aperto de mão desta tentativa não serve mais, tenha ela dado certo
         // ou não. Deixá-lo vivo daria uma segunda chance a quem estivesse
         // testando `state` no chute.
-        "set-cookie": clearedCookie(HANDSHAKE_COOKIE, request.url),
+        "set-cookie": clearedCookie(HANDSHAKE_COOKIE, publicOriginFor(request)),
         "cache-control": "no-store",
       },
     },
@@ -64,6 +65,10 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  // Ver `publicOriginFor`: atrás do proxy, `request.url` é a origem interna — e
+  // é ela que decidia o `Secure` do cookie, deixando a sessão de um site HTTPS
+  // sair sem a flag.
+  const origem = publicOriginFor(request);
 
   // O provedor recusou (usuário cancelou, client sem acesso, escopo inválido).
   // A descrição dele vai para o log; a resposta não a repete de volta ao
@@ -100,9 +105,9 @@ export async function GET(request: Request) {
     const headers = new Headers({ location: destino, "cache-control": "no-store" });
     headers.append(
       "set-cookie",
-      sessionCookie(await sealSession(payload, config), request.url),
+      sessionCookie(await sealSession(payload, config), origem),
     );
-    headers.append("set-cookie", clearedCookie(HANDSHAKE_COOKIE, request.url));
+    headers.append("set-cookie", clearedCookie(HANDSHAKE_COOKIE, origem));
 
     return new Response(null, { status: 302, headers });
   } catch (err) {
