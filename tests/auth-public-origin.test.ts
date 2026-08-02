@@ -77,11 +77,11 @@ test("a cadeia de `x-forwarded-host` usa o PRIMEIRO", () => {
 // O header é falsificável — o que ele NÃO pode fazer
 // ---------------------------------------------------------------------------
 
-test("`x-forwarded-proto: http` forjado NÃO rebaixa um host público", () => {
-  // Este é o limite que separa "usar o header" de "confiar no header". Se ele
-  // pudesse impor `http`, bastaria um pedido forjado para a aplicação passar a
-  // servir o cookie de sessão sem `Secure` — e aí o header vira ferramenta de
-  // downgrade em vez de informação de roteamento.
+test("`x-forwarded-proto` forjado não muda nada — ele nem é lido", () => {
+  // Este é o limite que separa "usar o header" de "confiar no header". Se o
+  // esquema saísse de `x-forwarded-proto`, bastaria um pedido forjado com
+  // `http` para a aplicação servir o cookie de sessão sem `Secure` — e o header
+  // viraria ferramenta de downgrade em vez de informação de roteamento.
   assert.equal(
     publicOriginFor(
       req("https://app.exemplo.com/", {
@@ -91,6 +91,28 @@ test("`x-forwarded-proto: http` forjado NÃO rebaixa um host público", () => {
     ),
     "https://app.exemplo.com",
   );
+});
+
+test("`x-forwarded-host: localhost` forjado NÃO tira o `Secure`", () => {
+  // O caso que a revisão pegou, e que a primeira versão desta correção errava:
+  // `isSecureRequest` abre exceção para `localhost`, então bastava forjar o HOST
+  // como localhost para a origem virar `http://localhost` e o cookie de um site
+  // HTTPS real sair sem `Secure`. Nem era preciso forjar o proto junto — atrás
+  // de um proxy que termina TLS, o esquema interno já é `http`.
+  //
+  // Antes da correção o valor vinha de `request.url`, que nenhum header
+  // alcança. Ou seja: a primeira versão PIOROU esta aresta enquanto consertava
+  // a outra. Agora, com proxy presente, o esquema é `https` sempre — forjar só
+  // consegue LIGAR o `Secure`.
+  const casos: Array<Record<string, string>> = [
+    { "x-forwarded-host": "localhost" },
+    { "x-forwarded-host": "localhost:3000", "x-forwarded-proto": "http" },
+    { "x-forwarded-host": "127.0.0.1", "x-forwarded-proto": "http" },
+  ];
+  for (const headers of casos) {
+    const origem = publicOriginFor(req("http://localhost:3000/", headers));
+    assert.match(origem, /^https:/, `esperava https para ${JSON.stringify(headers)}`);
+  }
 });
 
 test("host forjado produz autorização RECUSADA, não redirecionamento", () => {
@@ -111,16 +133,12 @@ test("host malformado cai de volta para a origem do pedido", () => {
   );
 });
 
-test("localhost encaminhado mantém http", () => {
-  // Um proxy local (docker, túnel) continua servindo em texto claro, e forçar
-  // `https` aqui quebraria o desenvolvimento sem ganhar nada.
+test("sem proxy, localhost continua em http", () => {
+  // O desenvolvimento local direto (`npm run dev`) não manda header nenhum, e é
+  // este caso que precisa continuar sem `Secure` — senão o cookie não sobe.
   assert.equal(
-    publicOriginFor(
-      req("http://127.0.0.1:3000/", {
-        "x-forwarded-host": "localhost:3000",
-        "x-forwarded-proto": "http",
-      }),
-    ),
+    publicOriginFor(req("http://localhost:3000/", { host: "localhost:3000" })),
     "http://localhost:3000",
   );
+  assert.equal(publicOriginFor(req("http://127.0.0.1:3000/")), "http://127.0.0.1:3000");
 });
