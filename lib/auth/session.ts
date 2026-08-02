@@ -375,6 +375,66 @@ export function callbackUriFor(requestUrl: string | URL): string {
   return new URL(AUTH_CALLBACK_PATH, requestUrl).toString();
 }
 
+/**
+ * A origem PÚBLICA desta requisição — a que o navegador realmente usou.
+ *
+ * ## Por que `request.url` não serve sozinho
+ *
+ * Em produção e no ambiente de desenvolvimento a aplicação roda atrás de um
+ * proxy reverso. O proxy encaminha para a porta interna, e `request.url` traz
+ * essa origem interna (`http://localhost:3000`) — não o endereço que a pessoa
+ * digitou.
+ *
+ * Isso arrebentava o login inteiro, e de um jeito difícil de ler: a plataforma
+ * registra o endereço PÚBLICO como `redirect_uri` e compara por igualdade exata
+ * (RFC 9700, sem curinga). O `redirect_uri` montado de `request.url` nunca
+ * batia, e a tentativa de entrar morria em "endereço de retorno não registrado"
+ * — com o dedo apontado para o registro, que estava certo.
+ *
+ * ## A regra, e por que ela é assim
+ *
+ * **Com `x-forwarded-host`: o host vem do header e o esquema é `https`, sempre.**
+ * **Sem ele: vale a origem do próprio pedido, `request.url`.**
+ *
+ * O esquema NÃO é lido de `x-forwarded-proto`, e essa omissão é o ponto. Esta
+ * origem também decide o `Secure` do cookie (`isSecureRequest`), então qualquer
+ * caminho que deixasse um header REBAIXAR o esquema seria uma forma de tirar o
+ * `Secure` da sessão de um site HTTPS com um pedido forjado.
+ *
+ * Com a regra acima, forjar `x-forwarded-host` só consegue LIGAR o `Secure`,
+ * nunca desligar — inclusive forjando `localhost`, que continua produzindo
+ * `https://localhost`. É a direção segura do erro.
+ *
+ * A contrapartida aceita: um proxy local servindo texto claro receberia cookie
+ * com `Secure`. Não quebra nada — `localhost` é contexto seguro para os
+ * navegadores, que aceitam `Secure` ali —, e não existe implantação suportada
+ * deste scaffold servindo em `http` atrás de proxy.
+ *
+ * Sobre o host em si: ele é falsificável, e a contenção é o provedor. O
+ * `redirect_uri` derivado dele é conferido contra a lista registrada, por
+ * igualdade exata. Um host forjado produz autorização RECUSADA — nunca um
+ * código de autorização entregue noutro lugar.
+ */
+export function publicOriginFor(request: Request): string {
+  const forwardedHost = firstForwarded(request.headers.get("x-forwarded-host"));
+
+  // Sem proxy: a origem do pedido é a verdade, e é dela que sai também a exceção
+  // de `localhost` do desenvolvimento direto.
+  if (!forwardedHost) return new URL(request.url).origin;
+
+  try {
+    return new URL(`https://${forwardedHost}`).origin;
+  } catch {
+    return new URL(request.url).origin;
+  }
+}
+
+/** `x-forwarded-host` pode vir com a cadeia inteira (`a, b, c`). Vale o primeiro. */
+function firstForwarded(value: string | null): string | null {
+  const first = value?.split(",")[0]?.trim();
+  return first ? first : null;
+}
+
 interface CookieOptions {
   maxAge: number;
   secure: boolean;

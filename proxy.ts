@@ -11,6 +11,7 @@ import {
   clearedCookie,
   needsRefresh,
   readSealedPayload,
+  publicOriginFor,
   refreshSession,
   sealSession,
   sessionCookie,
@@ -73,7 +74,7 @@ function deny(request: NextRequest): NextResponse {
     ? NextResponse.redirect(
         new URL(
           `${AUTH_LOGIN_PATH}?returnTo=${encodeURIComponent(returnToFor(request))}`,
-          request.url,
+          publicOriginFor(request),
         ),
       )
     : NextResponse.json(
@@ -81,7 +82,10 @@ function deny(request: NextRequest): NextResponse {
         { status: 401, headers: { "cache-control": "no-store" } },
       );
 
-  response.headers.append("set-cookie", clearedCookie(SESSION_COOKIE, request.url));
+  response.headers.append(
+    "set-cookie",
+    clearedCookie(SESSION_COOKIE, publicOriginFor(request)),
+  );
   return response;
 }
 
@@ -135,7 +139,10 @@ export async function proxy(request: NextRequest) {
     // o cookie ANTIGO nesta requisição e só veria o novo na seguinte.
     request.cookies.set(SESSION_COOKIE, selada);
     const response = NextResponse.next({ request });
-    response.headers.append("set-cookie", sessionCookie(selada, request.url));
+    response.headers.append(
+      "set-cookie",
+      sessionCookie(selada, publicOriginFor(request)),
+    );
     return response;
   } catch (err) {
     // Refresh expirado, revogado, ou reapresentado (o provedor derruba a família
