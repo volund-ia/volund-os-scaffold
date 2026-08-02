@@ -3,23 +3,50 @@
  *
  * ## Leia isto antes de proteger uma tela com `can()`
  *
- * O catálogo de permissões por App ainda **não existe** na plataforma (é a fase
- * seguinte desta mudança). Enquanto ele não existir, o provedor emite todo token
- * com `roles: []` e `permissions: []` — de propósito: inventar um papel implícito
- * ("é membro da organização, logo é administrador do App") faria a baseline da
- * organização vazar para dentro do App, que é exatamente o que o modelo recusa.
+ * O catálogo de permissões por App **existe** e está no ar. São dois passos, e
+ * eles são de donos diferentes:
  *
- * Consequência prática, e a razão deste aviso ficar aqui em cima:
+ * 1. **Você declara** quais permissões e papéis a aplicação tem, chamando a
+ *    ferramenta `report_app_permissions`. É declarativo: mande o catálogo
+ *    inteiro, com chaves sem namespace (`fechar_mes`, e não `app:algo:fechar_mes`
+ *    — o servidor põe o dele). Declarar **não concede nada a ninguém**, nem a
+ *    você, nem a quem criou o App;
+ * 2. **Uma pessoa concede**, na aba Segurança do App, no VolundOS. A partir daí
+ *    as permissões chegam em `session.permissions` e os papéis em `session.roles`,
+ *    e `can()` responde `true` para quem recebeu.
  *
- * > **Hoje `can()` devolve `false` para qualquer permissão.** Um limite protegido
- * > por `can("algo")` nega TODO MUNDO, inclusive quem criou o App.
+ * Entre um passo e outro, `can()` devolve `false` para todo mundo — e isso é
+ * projeto, não pendência: um papel implícito ("é membro da organização, logo é
+ * administrador do App") faria a baseline da organização vazar para dentro do
+ * App. Nenhuma concessão nasce sozinha.
  *
- * O portão desta camada é a **sessão**: estar autenticado, com token desta
- * audiência, na organização dona do App. É isso que `guard()` verifica e é isso
- * que protege as rotas por default. `can()` está pronto para quando as
- * concessões existirem, e é o que evita que cada App invente um modelo de papéis
- * próprio nesse dia — mas usá-lo agora tranca a porta com a chave do lado de
- * fora.
+ * O que fazer com isso: **declare o catálogo, proteja com `can()`, e avise a
+ * pessoa que ela precisa conceder** na aba Segurança. Uma tela que nega todo
+ * mundo até a primeira concessão é o estado correto e temporário; ele se resolve
+ * com um clique de quem administra, sem tocar no código.
+ *
+ * ## O que NÃO fazer (aconteceu duas vezes)
+ *
+ * > Não construa uma lista de administradores dentro do banco da aplicação —
+ * > nem por e-mail, nem por id de usuário, nem por "tabela de papéis" própria.
+ *
+ * Foi o que dois agentes fizeram, em Apps diferentes, ao ler uma versão anterior
+ * deste comentário que dizia que o catálogo não existia. O resultado, nos dois
+ * casos: uma lista paralela sem trilha de auditoria, sem revogação, invisível
+ * para quem administra a organização — e que precisa de você toda vez que muda.
+ * Num deles a lista era conferida contra um campo da sessão que vinha vazio, e o
+ * App inteiro ficou trancado: nem quem o criou conseguia executar a ação
+ * restrita.
+ *
+ * A pergunta que separa os dois caminhos é simples: **quem muda quem pode o
+ * quê?** Se a resposta for "eu, editando código", é o caminho errado.
+ *
+ * ## O portão de baixo continua sendo a sessão
+ *
+ * Estar autenticado, com token desta audiência, na organização dona do App —
+ * é o que `guard()` verifica, e é o que protege TODAS as rotas por herança,
+ * independentemente de permissão. `can()` é o segundo nível: distingue quem
+ * entrou de quem pode uma ação específica.
  */
 
 import type { Session } from "./session";
