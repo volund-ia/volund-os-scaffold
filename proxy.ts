@@ -82,7 +82,10 @@ function deny(request: NextRequest): NextResponse {
         { status: 401, headers: { "cache-control": "no-store" } },
       );
 
-  response.headers.append("set-cookie", clearedCookie(SESSION_COOKIE, publicOriginFor(request)));
+  response.headers.append(
+    "set-cookie",
+    clearedCookie(SESSION_COOKIE, publicOriginFor(request)),
+  );
   return response;
 }
 
@@ -136,7 +139,10 @@ export async function proxy(request: NextRequest) {
     // o cookie ANTIGO nesta requisição e só veria o novo na seguinte.
     request.cookies.set(SESSION_COOKIE, selada);
     const response = NextResponse.next({ request });
-    response.headers.append("set-cookie", sessionCookie(selada, publicOriginFor(request)));
+    response.headers.append(
+      "set-cookie",
+      sessionCookie(selada, publicOriginFor(request)),
+    );
     return response;
   } catch (err) {
     // Refresh expirado, revogado, ou reapresentado (o provedor derruba a família

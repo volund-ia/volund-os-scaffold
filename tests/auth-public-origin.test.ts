@@ -46,11 +46,15 @@ test("atrás do proxy, a origem é a PÚBLICA e não a interna", () => {
 test("sem proxy, o comportamento não muda", () => {
   // Desenvolvimento local direto: nada de forwarded, e a origem é a do pedido.
   assert.equal(
-    publicOriginFor(req("http://localhost:3000/api/auth/login", { host: "localhost:3000" })),
+    publicOriginFor(
+      req("http://localhost:3000/api/auth/login", { host: "localhost:3000" }),
+    ),
     "http://localhost:3000",
   );
   assert.equal(
-    callbackUriFor(publicOriginFor(req("http://localhost:3000/x", { host: "localhost:3000" }))),
+    callbackUriFor(
+      publicOriginFor(req("http://localhost:3000/x", { host: "localhost:3000" })),
+    ),
     "http://localhost:3000/api/auth/callback",
   );
 });
