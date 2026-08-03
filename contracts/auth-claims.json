@@ -1,0 +1,30 @@
+{
+  "$comment": "Contrato dos claims do ACCESS token entre o provedor (volund-os) e o scaffold dos Apps (volund-os-scaffold). Versionado IDÊNTICO nos dois repositórios; a coordenação é o número de contrato do scaffold, que a plataforma já recusa quando não suporta. Ver contracts/README.md.",
+  "contract": 2,
+  "accessToken": {
+    "always": [
+      "iss",
+      "sub",
+      "aud",
+      "azp",
+      "app_id",
+      "org_id",
+      "scope",
+      "roles",
+      "permissions"
+    ],
+    "scoped": {
+      "email": "email",
+      "name": "profile"
+    }
+  },
+  "session": {
+    "userId": "sub",
+    "orgId": "org_id",
+    "appId": "app_id",
+    "email": "email",
+    "name": "name",
+    "roles": "roles",
+    "permissions": "permissions"
+  }
+}
