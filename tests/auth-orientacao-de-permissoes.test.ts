@@ -56,6 +56,40 @@ test("a orientação desaconselha a lista de administradores dentro do App", () 
   }
 });
 
+/**
+ * O primeiro argumento de `can()` é a sessão inteira — `session` ou
+ * `gate.session` —, e nada mais: a vírgula fecha o argumento.
+ */
+const PRIMEIRO_ARGUMENTO_E_A_SESSAO = /^(?:\w+\.)?session\s*,/;
+
+test("a regra do primeiro argumento não afrouxa", () => {
+  // O padrão é a regra; sem estes casos, um afrouxamento nele passaria calado e
+  // levaria junto o teste abaixo, que é quem vigia o texto de verdade.
+  for (const aceito of [
+    'session, "fechar_mes"',
+    'gate.session, "fechar_mes"',
+    "session , x",
+  ]) {
+    assert.match(
+      aceito,
+      PRIMEIRO_ARGUMENTO_E_A_SESSAO,
+      `deveria aceitar: can(${aceito})`,
+    );
+  }
+  for (const recusado of [
+    '"fechar_mes"', // o caso real que motivou este teste
+    'session.permissions, "fechar_mes"', // um array não é uma Session
+    'gate.session.permissions, "fechar_mes"',
+    'sessionId, "fechar_mes"', // parecido de menos
+  ]) {
+    assert.doesNotMatch(
+      recusado,
+      PRIMEIRO_ARGUMENTO_E_A_SESSAO,
+      `deveria recusar: can(${recusado})`,
+    );
+  }
+});
+
 test("todo exemplo de `can()` na orientação passa a sessão", () => {
   // `can(session, permission)`. Um exemplo escrito como `can("fechar_mes")` não
   // compila em TypeScript e, em JavaScript, deixaria `permission` indefinida —
@@ -66,17 +100,28 @@ test("todo exemplo de `can()` na orientação passa a sessão", () => {
   // alguém, com o sintoma "protegi a tela e ninguém entra" — a mesma frustração
   // que mandou dois agentes construírem um RBAC paralelo.
   for (const arquivo of ORIENTACOES) {
-    const chamadas = [...ler(arquivo).matchAll(/\bcan\(([^)]*)\)/g)]
+    // O `(?<!function\s)` exclui a DECLARAÇÃO de `can()`, que vive neste mesmo
+    // arquivo de orientação: seus parâmetros são `session: Session | null, …`, e
+    // ela não é um exemplo de chamada. Sem a exclusão, o teste reprovaria a
+    // própria assinatura que ele existe para defender.
+    const chamadas = [...ler(arquivo).matchAll(/(?<!function\s)\bcan\(([^)]*)\)/g)]
       .map((m) => (m[1] ?? "").trim())
       .filter((args) => args !== "");
 
     for (const args of chamadas) {
-      // `^session\b` aceita tanto a chamada (`session, "x"`) quanto a própria
-      // declaração da função (`session: Session | null, ...`), que também casa
-      // com o padrão e é legítima.
+      // A regra é "a sessão é passada", não "a variável se chama session".
+      // `gate.session` é o idioma que o próprio AGENTS.md ensina para rota de
+      // API, e exigir o nome cru reprovava exemplo correto — foi o que
+      // aconteceu ao documentar o inverso de "esconder não é proteger".
+      //
+      // A vírgula no fim é o que impede o padrão de afrouxar demais: sem ela,
+      // `\b` casa também ANTES do ponto, e `can(session.permissions, …)` — que
+      // devolve `false` sempre, porque um array não é uma `Session` — passaria.
+      // Aqui isso não é hipótese de estilo: em Markdown não há compilador para
+      // reprovar o exemplo, e o agente copia o que lê.
       assert.match(
         args,
-        /^session\b/,
+        PRIMEIRO_ARGUMENTO_E_A_SESSAO,
         `${arquivo}: \`can(${args})\` — falta a sessão; a assinatura é can(session, permission)`,
       );
     }

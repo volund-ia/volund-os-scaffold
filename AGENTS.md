@@ -107,6 +107,12 @@ de código.
 Proteger com sessão (`guard()`) continua sendo o portão de baixo, e vale para
 todas as rotas por herança. `can()` é o segundo nível.
 
+**Esconder um botão não protege, e mostrar um botão que o servidor nega
+confunde.** As duas metades da mesma regra: a presença do controle na tela e a
+decisão da rota saem do **mesmo** `can()`. Num App real a tela mostrava
+"Liberar" para quem não podia, e o servidor recusava no clique — a proteção
+estava certa, a interface é que prometia o que não existia para aquela pessoa.
+
 Se o usuário pedir "coloca um login no app", a resposta é que ele já tem: mostre
 a `/` (vitrine, pública) e a `/painel` (protegida), que são o exemplo pronto.
 
