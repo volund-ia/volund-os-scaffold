@@ -71,12 +71,17 @@ test("todo exemplo de `can()` na orientação passa a sessão", () => {
       .filter((args) => args !== "");
 
     for (const args of chamadas) {
-      // `^session\b` aceita tanto a chamada (`session, "x"`) quanto a própria
-      // declaração da função (`session: Session | null, ...`), que também casa
-      // com o padrão e é legítima.
+      // A regra é "a sessão é passada", não "a variável se chama session".
+      // `gate.session` é o idioma que o próprio AGENTS.md ensina para rota de
+      // API, e exigir o nome cru reprovava exemplo correto — foi o que
+      // aconteceu ao documentar o inverso de "esconder não é proteger".
+      //
+      // O prefixo opcional aceita `gate.session`; o `\b` continua barrando o
+      // caso real que este teste existe para pegar, `can("fechar_mes")`, cujo
+      // primeiro argumento é uma string.
       assert.match(
         args,
-        /^session\b/,
+        /^(\w+\.)?session\b/,
         `${arquivo}: \`can(${args})\` — falta a sessão; a assinatura é can(session, permission)`,
       );
     }

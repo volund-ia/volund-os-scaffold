@@ -74,6 +74,30 @@ export function hasRole(session: Session | null, role: string): boolean {
  * Existe para deixar o par explícito no código: onde houver `hideUnless`, tem de
  * haver a mesma checagem no servidor, no limite que a ação atravessa. Quem chama
  * a API direto, sem passar pela tela, nunca viu o elemento escondido.
+ *
+ * ## E o inverso também confunde: não MOSTRE o que o servidor nega
+ *
+ * A frase acima é sobre esconder de menos. Falta a outra metade, e ela apareceu
+ * num App real em 02/08/2026: a tela mostrava o botão "Liberar" para quem não
+ * tinha a permissão, e o servidor recusava com "sem permissão" ao clique. A
+ * proteção estava certa — a interface é que prometia uma ação que não existia
+ * para aquela pessoa.
+ *
+ * As duas metades têm a mesma regra: **a presença do controle e a decisão do
+ * servidor saem do MESMO `can()`**. Um botão cuja condição de aparecer é
+ * diferente da condição de executar vai divergir, e a pessoa descobre no clique.
+ *
+ * ```tsx
+ * // A tela pergunta a mesma coisa que a rota vai perguntar.
+ * {can(session, "fechar_mes") && <button formAction={fecharMes}>Fechar o mês</button>}
+ * ```
+ *
+ * ```ts
+ * // ...e a rota pergunta de novo, porque quem chama a API não passou pela tela.
+ * if (!can(gate.session, "fechar_mes")) {
+ *   return NextResponse.json({ error: "sem permissão" }, { status: 403 });
+ * }
+ * ```
  */
 export function hideUnless(session: Session | null, permission: string): boolean {
   return !can(session, permission);
