@@ -68,7 +68,10 @@ function claimsFromContract(): TokenClaims {
   for (const key of Object.keys(value)) {
     if (!permitidos.has(key)) delete value[key];
   }
-  return value as TokenClaims;
+  // `as unknown as` porque o objeto é montado a partir do CONTRATO, não do tipo:
+  // é justamente a divergência entre os dois que este arquivo existe para
+  // encontrar, e um `as` direto exigiria que ele já casasse com `TokenClaims`.
+  return value as unknown as TokenClaims;
 }
 
 /**
@@ -126,13 +129,20 @@ test("o tipo dos claims declara tudo o que o contrato promete", () => {
   // `TokenClaims` é o que o resto da aplicação enxerga. Um claim ausente dele
   // seria descartado na leitura mesmo chegando no token.
   const src = read("lib/auth/jwt.ts");
-  const bloco = src.slice(src.indexOf("export interface TokenClaims"), src.indexOf("export type VerifyResult"));
+  const bloco = src.slice(
+    src.indexOf("export interface TokenClaims"),
+    src.indexOf("export type VerifyResult"),
+  );
 
   for (const claim of [
     ...contract.accessToken.always,
     ...Object.keys(contract.accessToken.scoped),
   ]) {
-    assert.match(bloco, new RegExp(`\\b${claim}\\??:`), `\`TokenClaims\` não declara \`${claim}\``);
+    assert.match(
+      bloco,
+      new RegExp(`\\b${claim}\\??:`),
+      `\`TokenClaims\` não declara \`${claim}\``,
+    );
   }
 });
 
@@ -152,6 +162,10 @@ test("os escopos pedidos cobrem os claims que o contrato condiciona", () => {
   const bloco = src.slice(src.indexOf("export const AUTH_SCOPES"));
 
   for (const scope of new Set(Object.values(contract.accessToken.scoped))) {
-    assert.match(bloco, new RegExp(`"${scope}"`), `a aplicação precisa pedir o escopo \`${scope}\``);
+    assert.match(
+      bloco,
+      new RegExp(`"${scope}"`),
+      `a aplicação precisa pedir o escopo \`${scope}\``,
+    );
   }
 });

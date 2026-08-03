@@ -23,12 +23,12 @@ Descreve os claims do **access token** — o token que o App relê a cada
 requisição, e do qual sai tudo o que a aplicação sabe sobre quem está do outro
 lado.
 
-| Campo | O que significa |
-|---|---|
-| `contract` | O contrato de scaffold a que este arquivo pertence. É o mesmo número de `volund-scaffold.json`, e é ele que a plataforma recusa quando não suporta. |
-| `accessToken.always` | Claims presentes em **todo** access token, independentemente do escopo. |
-| `accessToken.scoped` | Claim → escopo que o libera. Sem o escopo, o claim **não sai** — é o que impede o token de virar "o perfil de quem o pediu". |
-| `session` | Campo da sessão que o App enxerga → claim que o alimenta. É esta linha que estava quebrada no caso do `email`. |
+| Campo                | O que significa                                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contract`           | O contrato de scaffold a que este arquivo pertence. É o mesmo número de `volund-scaffold.json`, e é ele que a plataforma recusa quando não suporta. |
+| `accessToken.always` | Claims presentes em **todo** access token, independentemente do escopo.                                                                             |
+| `accessToken.scoped` | Claim → escopo que o libera. Sem o escopo, o claim **não sai** — é o que impede o token de virar "o perfil de quem o pediu".                        |
+| `session`            | Campo da sessão que o App enxerga → claim que o alimenta. É esta linha que estava quebrada no caso do `email`.                                      |
 
 ## Como as duas pontas usam
 
