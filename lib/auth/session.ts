@@ -440,18 +440,51 @@ interface CookieOptions {
   secure: boolean;
 }
 
+/**
+ * O App também roda DENTRO do painel do VolundOS, num iframe entre sites — e é
+ * isso que decide os atributos abaixo.
+ *
+ * `SameSite=Lax` foi a primeira escolha, e ela é correta para uma aba: o
+ * callback chega como navegação de topo vinda do provedor, e `Strict` esconderia
+ * o cookie do aperto de mão exatamente na requisição que precisa dele.
+ *
+ * Só que no painel o App é enquadrado por `os.volund.com.br`, e aí o contexto é
+ * de TERCEIRO. O navegador não guarda nem devolve cookie `Lax` nesse contexto, e
+ * o efeito medido em 03/08/2026 foi: o login começa, o provedor devolve o
+ * `code`, e o callback não acha o próprio pedido — `400`, "pedido de login não
+ * encontrado ou expirado". Em aba separada, o mesmo App entrava sem problema.
+ *
+ * `SameSite=None` sozinho resolveria e cobraria caro: a sessão passaria a viajar
+ * em TODA requisição entre sites, e qualquer rota de escrita ficaria alcançável
+ * por CSRF sem defesa própria. `Partitioned` (CHIPS) é o meio termo que a
+ * plataforma escolheu: o cookie existe no iframe, mas o pote é separado por site
+ * que enquadra. Outro site que embuta este App recebe um pote diferente e não vê
+ * a sessão daqui — deixa de ser cookie de terceiro no sentido que importa, e
+ * sobrevive ao fim dos cookies de terceiro no Chrome.
+ *
+ * ## O que muda para quem usa
+ *
+ * A sessão de dentro do painel e a de uma aba separada passam a ser DUAS. Entrar
+ * numa não entra na outra. É o preço do isolamento, e é preferível ao contrário:
+ * uma sessão só, visível a qualquer site que resolva enquadrar o App.
+ *
+ * ## Por que o desenvolvimento local continua `Lax`
+ *
+ * `SameSite=None` sem `Secure` é recusado pelo navegador, e `Partitioned` exige
+ * `Secure`. Em `http://localhost` não há `Secure` — mandar `None` ali deixaria o
+ * cookie ser descartado e o login pararia de funcionar na máquina de quem
+ * desenvolve. Endereço local não é enquadrado por ninguém, então `Lax` serve.
+ */
 function serializeCookie(name: string, value: string, options: CookieOptions): string {
-  const parts = [
-    `${name}=${value}`,
-    "Path=/",
-    "HttpOnly",
-    // `Lax` e não `Strict`: o callback chega como navegação de topo vinda do
-    // provedor, e `Strict` esconderia o cookie do aperto de mão exatamente na
-    // requisição que precisa dele.
-    "SameSite=Lax",
-    `Max-Age=${options.maxAge}`,
-  ];
-  if (options.secure) parts.push("Secure");
+  const parts = [`${name}=${value}`, "Path=/", "HttpOnly"];
+
+  if (options.secure) {
+    parts.push("SameSite=None", "Secure", "Partitioned");
+  } else {
+    parts.push("SameSite=Lax");
+  }
+
+  parts.push(`Max-Age=${options.maxAge}`);
   return parts.join("; ");
 }
 
