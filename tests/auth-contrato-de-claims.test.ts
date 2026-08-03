@@ -34,6 +34,20 @@ interface ClaimsContract {
 const contract = JSON.parse(read("contracts/auth-claims.json")) as ClaimsContract;
 
 /**
+ * O trecho entre dois marcos, exigindo que os DOIS existam.
+ *
+ * `slice(a, b)` com `b < a` devolve string vazia, e asserção sobre string vazia
+ * passa calada.
+ */
+function sliceBetween(source: string, from: string, to: string): string {
+  const start = source.indexOf(from);
+  assert.notEqual(start, -1, `marco inicial não encontrado: ${from}`);
+  const end = source.indexOf(to, start + from.length);
+  assert.notEqual(end, -1, `marco final não encontrado: ${to}`);
+  return source.slice(start, end);
+}
+
+/**
  * Um access token como o provedor o emite, montado A PARTIR DO CONTRATO.
  *
  * Escrever os claims à mão aqui seria escrever a expectativa duas vezes — e a
@@ -93,6 +107,21 @@ function sessionFromClaims(claims: TokenClaims) {
   };
 }
 
+test("o contrato cobre TODOS os campos da sessão, sem sobra dos dois lados", () => {
+  // Sem esta igualdade, o contrato poderia ser estreitado e a guarda sumiria
+  // junto: tirar `email` do contrato faria os laços abaixo pararem de exigi-lo,
+  // enquanto `readSession` continuaria consumindo `claims.email`. O campo
+  // voltaria a chegar nulo com a suíte verde — que é exatamente o desfecho que
+  // este arquivo existe para tornar impossível.
+  const session = sessionFromClaims(claimsFromContract());
+
+  assert.deepEqual(
+    Object.keys(session).sort(),
+    Object.keys(contract.session).sort(),
+    "campo da sessão fora do contrato (ou contrato prometendo campo que a sessão não tem)",
+  );
+});
+
 test("todo campo da sessão chega preenchido a partir dos claims do contrato", () => {
   // A asserção que teria pego o defeito no dia: cada campo que a aplicação
   // enxerga precisa ter origem num claim que o provedor emite de verdade.
@@ -112,8 +141,15 @@ test("todo campo da sessão chega preenchido a partir dos claims do contrato", (
 test("o mapeamento testado aqui é o MESMO de `readSession`", () => {
   // Sem esta guarda, a cópia acima viraria decoração: `readSession` poderia
   // mudar e este arquivo continuaria aprovando o mapeamento antigo.
+  // Recorte limitado ao CORPO de `readSession`: até o fim do arquivo, uma
+  // ocorrência posterior de `campo: claims.x` — noutra função — aprovaria a
+  // asserção sem que `readSession` fizesse nada disso.
   const src = read("lib/auth/session.ts");
-  const bloco = src.slice(src.indexOf("export async function readSession"));
+  const bloco = sliceBetween(
+    src,
+    "export async function readSession",
+    "export function needsRefresh",
+  );
 
   for (const [field, claim] of Object.entries(contract.session)) {
     const esperado = new RegExp(`${field}:\\s*(Array\\.isArray\\()?claims\\.${claim}`);
@@ -158,8 +194,10 @@ test("os escopos pedidos cobrem os claims que o contrato condiciona", () => {
   // Se a aplicação parar de pedir `email`, o provedor para de emitir o claim — e
   // o campo volta a chegar nulo, sem nada quebrar do lado de lá. O defeito
   // renasceria por esta porta.
+  // Mesma razão: só a declaração de `AUTH_SCOPES`. Um `"email"` solto mais
+  // abaixo no arquivo passaria por escopo pedido.
   const src = read("lib/auth/config.ts");
-  const bloco = src.slice(src.indexOf("export const AUTH_SCOPES"));
+  const bloco = sliceBetween(src, "export const AUTH_SCOPES", "] as const;");
 
   for (const scope of new Set(Object.values(contract.accessToken.scoped))) {
     assert.match(
