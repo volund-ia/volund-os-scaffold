@@ -25,7 +25,7 @@ import {
   type AuthConfig,
 } from "./config";
 import { can } from "./permissions";
-import { readSession, type Session } from "./session";
+import { readSession, readSessionFromAccessToken, type Session } from "./session";
 
 /**
  * Sessão atual, ou `null`.
@@ -43,6 +43,36 @@ export async function getSession(): Promise<Session | null> {
   }
   const jar = await cookies();
   return readSession(jar.get(SESSION_COOKIE)?.value, config);
+}
+
+/**
+ * Sessão de quem chega com `Authorization: Bearer <access token>` — a porta do
+ * MCP.
+ *
+ * Não é uma autenticação nova: é a **mesma** validação da sessão web sobre um
+ * token que veio no cabeçalho em vez do cookie (ver
+ * `readSessionFromAccessToken`). Um agente que chama o MCP deste App apresenta o
+ * mesmo access token que o navegador da pessoa apresentaria, e o `can()` responde
+ * a mesma coisa para os dois.
+ *
+ * Devolve `null` sem cabeçalho, com esquema diferente de `Bearer`, com token
+ * inválido/expirado, ou sem a configuração da autenticação — em todos os casos
+ * quem chamou não provou identidade nenhuma, e distinguir os motivos na resposta
+ * só ajudaria quem está tentando adivinhar.
+ */
+export async function getSessionFromBearer(request: Request): Promise<Session | null> {
+  let config: AuthConfig;
+  try {
+    config = readAuthConfig();
+  } catch {
+    return null;
+  }
+
+  const header = request.headers.get("authorization") ?? "";
+  const [esquema, token] = header.split(" ");
+  if (esquema?.toLowerCase() !== "bearer" || !token) return null;
+
+  return readSessionFromAccessToken(token, config);
 }
 
 export type Gate =

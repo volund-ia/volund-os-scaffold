@@ -58,7 +58,25 @@ test("a lista pública é curta e enumerada", () => {
     "/",
     "/api/auth/callback",
     "/api/auth/login",
+    "/api/mcp",
   ]);
+});
+
+test("o endpoint MCP dispensa o cookie, e só o cookie", () => {
+  // Quem chama o MCP é um agente: ele apresenta `Authorization: Bearer <token>` e
+  // não tem cookie nenhum. Exigir sessão de cookie aqui recusaria toda chamada de
+  // agente ANTES de o token ser lido — e a autenticação, que existe, nunca
+  // aconteceria.
+  //
+  // Isto NÃO é uma rota aberta. O portão foi trocado, não removido: sem token
+  // válido `app/api/mcp/route.ts` responde 401, e cada tool passa pelo `can()` do
+  // serviço. É a única entrada da lista cujo portão vive na própria rota — e é por
+  // isso que ela merece um teste com o motivo escrito, em vez de só uma linha na
+  // lista acima.
+  assert.equal(isPublicRoute("/api/mcp"), true);
+  // E vale para o caminho exato: uma sub-rota nova debaixo dele não herda a
+  // dispensa, porque a comparação é por igualdade.
+  assert.equal(isPublicRoute("/api/mcp/qualquer-coisa"), false);
 });
 
 test("navegação leva redirecionamento; chamada de API leva 401", () => {

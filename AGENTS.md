@@ -259,6 +259,29 @@ regra nasce dentro dela; escrever a rota antes do serviço é o mesmo erro na ou
 porta. O teste `tests/mcp-registro-de-tools.test.ts` reprova tool que não chama
 serviço, mas ele reprova o resultado — a ordem é o que evita o retrabalho.
 
+### O endpoint MCP já existe — não reimplemente
+
+`app/api/mcp/route.ts` está pronto e serve **todas** as tools do registro. Você
+não escreve rota de MCP: registra a tool em `lib/mcp/tools.ts` e ela aparece lá.
+
+Como funciona, para você não precisar abrir o arquivo:
+
+- **A identidade é a mesma da tela.** Quem chama apresenta o access token da
+  plataforma no cabeçalho (`Authorization: Bearer`), e ele passa pela mesma
+  verificação da sessão web. Não há chave de API por App, não há conta de serviço:
+  o `Session` que chega ao serviço é indistinguível do que chega pela tela, e
+  revogar o acesso de alguém revoga o MCP dele junto.
+- **`tools/list` mostra só o que aquele sujeito pode chamar**, pelo mesmo `can()`
+  do serviço. Quem não tem a permissão nem vê a tool — e, se chamar pelo nome, é
+  recusado.
+- **Erro chega ao agente com o código da taxonomia** (`forbidden`,
+  `invalid_input`, `internal`…), para ele saber se deve pedir acesso, corrigir a
+  entrada ou desistir.
+
+Se o usuário perguntar "como um agente usa meu App", a resposta é: o endereço
+publicado + `/api/mcp`, com o token da organização — e ele configura isso em
+Integrações, no VolundOS. Você não constrói nada para isso funcionar.
+
 ## Interface
 
 A biblioteca de componentes é **shadcn/ui** (sobre Base UI), já instalada. Um
