@@ -16,8 +16,10 @@
 //
 // O caminho exercitado é o do `proxy.ts`, que é quem renova: `readSealedPayload`
 // → `needsRefresh` → `refreshSession` → `sealSession` → e a rota lendo o cookie
-// novo com `readSession`. O que fica de fora é só a mecânica do Next em volta
-// (`NextResponse`, escrever o cabeçalho `set-cookie`).
+// novo com `readSession`. O último caso deste arquivo fecha o circuito chamando
+// o **`proxy()` de verdade** e pegando o cookie do cabeçalho `set-cookie` que ele
+// emite — é o que prova que a renovação chega ao navegador, e não só à memória do
+// teste.
 //
 // O provedor é de mentira, como em `tests/auth-session.test.ts`: mesmas chaves
 // RSA forjadas na subida, mesma descoberta servida por um `fetch` trocado. O
@@ -28,7 +30,9 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, test } from "node:test";
 
-import type { AuthConfig } from "../lib/auth/config";
+import { NextRequest } from "next/server";
+
+import { SESSION_COOKIE, type AuthConfig } from "../lib/auth/config";
 import { base64UrlEncode, seal } from "../lib/auth/crypto";
 import { resetDiscoveryCacheForTests } from "../lib/auth/discovery";
 import type { PublicJwk } from "../lib/auth/jwt";
@@ -44,6 +48,7 @@ import {
 import { serviceRoute } from "../lib/http/service-route";
 import { getTool } from "../lib/mcp/tools";
 import { verDiagnostico } from "../lib/services/painel";
+import { proxy } from "../proxy";
 
 const ISSUER = "https://provedor.exemplo.test";
 const APP_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -120,6 +125,12 @@ async function cookie(permissoes: string[], expEm: number): Promise<string> {
 }
 
 before(async () => {
+  // O `proxy()` lê a configuração de `process.env`, e não de um parâmetro: para
+  // exercitá-lo é preciso montar o mesmo trio que a plataforma injeta.
+  process.env.VOLUND_OIDC_ISSUER = ISSUER;
+  process.env.VOLUND_OIDC_CLIENT_ID = config.clientId;
+  process.env.VOLUND_OIDC_CLIENT_SECRET = config.clientSecret;
+
   const par = await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -371,4 +382,61 @@ test("token expirado não vira sessão, mesmo com assinatura boa", async () => {
   // para impedir.
   const expirado = await cookie([PERMISSAO], agora() - 120);
   assert.equal(await readSession(expirado, config), null);
+});
+
+/** O valor do cookie de sessão dentro do `set-cookie` que a resposta carrega. */
+function cookieDaResposta(res: Response): string | null {
+  for (const bruto of res.headers.getSetCookie()) {
+    if (!bruto.startsWith(`${SESSION_COOKIE}=`)) continue;
+    const valor = bruto.slice(SESSION_COOKIE.length + 1).split(";")[0] ?? "";
+    return valor === "" ? null : valor;
+  }
+  return null;
+}
+
+test("o proxy renova de verdade: o cookie novo sai no set-cookie e já vem sem a permissão", async () => {
+  // Os casos acima exercitam as funções que o `proxy.ts` chama. Este chama o
+  // proxy. É a diferença entre "a renovação funciona" e "a renovação CHEGA ao
+  // navegador": sem o `set-cookie`, o token novo viveria só na memória daquela
+  // requisição e a seguinte leria o antigo de novo.
+  const selado = await cookie([PERMISSAO], agora() + 30);
+  concedidas = [];
+
+  const pedido = new NextRequest("http://localhost:3000/painel");
+  pedido.cookies.set(SESSION_COOKIE, selado);
+  const resposta = await proxy(pedido);
+
+  // Não é recusa nem desvio para o login: a sessão continua válida, só mudou o
+  // que ela pode.
+  assert.equal(resposta.status, 200);
+  assert.equal(resposta.headers.get("location"), null);
+
+  const renovado = cookieDaResposta(resposta);
+  assert.ok(renovado, "o proxy tinha de devolver o cookie renovado no set-cookie");
+  assert.notEqual(renovado, selado, "o cookie devolvido é o novo, não o que entrou");
+
+  // E o que o navegador vai mandar na próxima requisição já não tem a permissão.
+  const session = await readSession(renovado, config);
+  assert.ok(session);
+  assert.deepEqual(session.permissions, []);
+
+  const portas = await tresPortas(session);
+  assert.equal(portas.servico.ok, false);
+  assert.equal(portas.tool.ok, false);
+  assert.equal(portas.rota.status, 403);
+});
+
+test("o proxy NÃO reemite cookie quando não há o que renovar", async () => {
+  // O controle negativo do caso acima: sem ele, um `set-cookie` emitido em toda
+  // requisição passaria por "renovação funcionando" — e a asserção de cima não
+  // provaria nada sobre a janela.
+  const selado = await cookie([PERMISSAO], agora() + 600);
+
+  const pedido = new NextRequest("http://localhost:3000/painel");
+  pedido.cookies.set(SESSION_COOKIE, selado);
+  const resposta = await proxy(pedido);
+
+  assert.equal(resposta.status, 200);
+  assert.equal(cookieDaResposta(resposta), null, "não havia nada a renovar");
+  assert.equal(chamadasAoTokenEndpoint, 0);
 });

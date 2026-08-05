@@ -76,14 +76,102 @@ function blocosDeCodigo(markdown: string): string[] {
   return markdown.split("```").filter((_, indice) => indice % 2 === 1);
 }
 
+/**
+ * Texto com o conteúdo das strings apagado, preservando o comprimento.
+ *
+ * Existe porque a contagem de parênteses abaixo é sintática: o exemplo de
+ * serviço tem um SQL com `(org_id, ...)` dentro de uma string, e contar aqueles
+ * parênteses faria a chamada "fechar" no lugar errado.
+ */
+function semStrings(codigo: string): string {
+  let fora = "";
+  let aspa: string | null = null;
+  for (const caractere of codigo) {
+    if (aspa) {
+      fora += caractere === aspa ? caractere : " ";
+      if (caractere === aspa) aspa = null;
+      continue;
+    }
+    if (caractere === '"' || caractere === "'" || caractere === "`") aspa = caractere;
+    fora += caractere;
+  }
+  return fora;
+}
+
+/**
+ * Cada chamada de `fabrica(...)` do markdown, uma por item.
+ *
+ * Validar o bloco inteiro deixaria os campos de uma chamada satisfazerem as
+ * asserções de outra: dois exemplos na mesma cerca, um deles sem `permission:`,
+ * e o teste passaria porque o vizinho tem. É por chamada, então.
+ */
+function chamadas(markdown: string, fabrica: string): string[] {
+  const encontradas: string[] = [];
+
+  for (const bloco of blocosDeCodigo(markdown)) {
+    const mascarado = semStrings(bloco);
+    const marcador = `${fabrica}(`;
+    let inicio = mascarado.indexOf(marcador);
+
+    while (inicio !== -1) {
+      let profundidade = 0;
+      let fim = -1;
+      for (let i = inicio + marcador.length - 1; i < mascarado.length; i += 1) {
+        const caractere = mascarado[i];
+        if (caractere === "(" || caractere === "{" || caractere === "[")
+          profundidade += 1;
+        else if (caractere === ")" || caractere === "}" || caractere === "]") {
+          profundidade -= 1;
+          if (profundidade === 0) {
+            fim = i + 1;
+            break;
+          }
+        }
+      }
+      if (fim === -1) break; // chamada não fechada: o markdown está truncado
+      encontradas.push(bloco.slice(inicio, fim));
+      inicio = mascarado.indexOf(marcador, fim);
+    }
+  }
+
+  return encontradas;
+}
+
+test("a extração pega uma chamada por vez, e não o bloco inteiro", () => {
+  // O teste do próprio instrumento: sem ele, uma extração quebrada faria os dois
+  // testes abaixo passarem por vacuidade — o pior tipo de teste verde.
+  const markdown = [
+    "```ts",
+    'defineService({ name: "a", permission: "a", input: z.object({}), kind: "read" });',
+    'defineService({ name: "b" });',
+    "```",
+  ].join("\n");
+
+  const achadas = chamadas(markdown, "defineService");
+  assert.equal(achadas.length, 2, "duas chamadas, dois itens");
+  assert.match(achadas[0] ?? "", /permission:/);
+  assert.doesNotMatch(
+    achadas[1] ?? "",
+    /permission:/,
+    "a segunda chamada não pode herdar os campos da primeira",
+  );
+
+  // E a máscara de strings: parêntese dentro de texto não fecha a chamada.
+  const comSql = [
+    "```ts",
+    'defineService({ sql: "values (1, 2)", name: "c" });',
+    "```",
+  ].join("\n");
+  assert.equal(chamadas(comSql, "defineService").length, 1);
+  assert.match(chamadas(comSql, "defineService")[0] ?? "", /name: "c"/);
+});
+
 test("nenhum exemplo de tool declara kind ou permission", () => {
   // O exemplo é o que acaba copiado. `kind` e `permission` são DERIVADOS do
   // serviço justamente para não existirem duas declarações capazes de divergir —
   // um exemplo que os declarasse na tool ensinaria a criar a divergência que o
   // resto do desenho existe para impedir.
-  const exemplos = blocosDeCodigo(ler("AGENTS.md")).filter((bloco) =>
-    bloco.includes("defineTool("),
-  );
+  const exemplos = chamadas(ler("AGENTS.md"), "defineTool");
   assert.ok(exemplos.length > 0, "AGENTS.md precisa ter um exemplo de defineTool");
 
   for (const exemplo of exemplos) {
@@ -102,9 +190,7 @@ test("todo exemplo de serviço declara a permissão", () => {
   // `permission` ausente não é "público": é erro de definição, e `defineService`
   // recusa. Um exemplo sem o campo ensinaria a esquecer justamente o campo que
   // separa público por decisão de público por descuido.
-  const exemplos = blocosDeCodigo(ler("AGENTS.md")).filter((bloco) =>
-    bloco.includes("defineService("),
-  );
+  const exemplos = chamadas(ler("AGENTS.md"), "defineService");
   assert.ok(exemplos.length > 0, "AGENTS.md precisa ter um exemplo de defineService");
 
   for (const exemplo of exemplos) {
