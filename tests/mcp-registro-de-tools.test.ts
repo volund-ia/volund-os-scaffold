@@ -23,7 +23,7 @@ import { test } from "node:test";
 import { z } from "zod";
 
 import type { Session } from "../lib/auth/session";
-import { defineTool, getTool, TOOL_MARK, TOOLS } from "../lib/mcp/tools";
+import { defineTool, getTool, registerTools, TOOL_MARK, TOOLS } from "../lib/mcp/tools";
 import { defineService } from "../lib/services/define";
 import { getService } from "../lib/services/index";
 import { ok } from "../lib/services/types";
@@ -229,6 +229,93 @@ test("mapInput sem schema próprio é recusado", () => {
   );
 });
 
+test("tool com schema próprio confere o contrato que anunciou", async () => {
+  // Dois defeitos moravam aqui, e nenhum aparecia como erro. Com schema próprio,
+  // o que o agente lê em `tool.input` não era aplicado (o serviço só validava o
+  // resultado do mapeamento), e `mapInput` rodava sobre entrada arbitrária — um
+  // mapeamento que acessa campo lançava `TypeError` FORA de qualquer `try`.
+  const servico = getService("ecoar_teste") ?? null;
+  assert.equal(servico, null, "o serviço de apoio não deve estar registrado");
+
+  const perfil = getService("ver_perfil");
+  assert.ok(perfil);
+
+  const tool = defineTool({
+    name: "ver_perfil_traduzido",
+    description: "Mostra o perfil, aceitando uma entrada com forma própria.",
+    service: perfil,
+    input: z.object({ detalhado: z.boolean() }),
+    // Mapeamento que ACESSA campo: sem a validação antes, entrada fora da forma
+    // faria isto lançar.
+    mapInput: (entrada) => ({
+      detalhado: (entrada as { detalhado: boolean }).detalhado,
+    }),
+  });
+
+  const invalida = await tool.call(sessao(), { detalhado: "sim" });
+  assert.equal(
+    invalida.ok,
+    false,
+    "entrada fora do schema anunciado deveria ser recusada",
+  );
+  if (!invalida.ok) {
+    assert.equal(invalida.error.code, "invalid_input");
+    assert.ok(
+      invalida.error.issues?.some((problema) => problema.startsWith("detalhado:")),
+      `esperava o campo apontado; veio ${JSON.stringify(invalida.error.issues)}`,
+    );
+  }
+
+  // E o caminho válido continua chegando ao serviço, já traduzido.
+  const valida = await tool.call(sessao(), { detalhado: true });
+  assert.equal(valida.ok, true);
+});
+
+test("mapeamento que quebra vira internal, sem exceção escapando", async (t) => {
+  const registrado = t.mock.method(console, "error", () => {});
+  const perfil = getService("ver_perfil");
+  assert.ok(perfil);
+
+  const tool = defineTool({
+    name: "ver_perfil_quebrado",
+    description: "Tool cujo mapeamento de entrada quebra, para provar a contenção.",
+    service: perfil,
+    input: z.object({}),
+    mapInput: () => {
+      throw new Error("defeito no mapeamento");
+    },
+  });
+
+  const res = await tool.call(sessao(), {});
+  assert.equal(res.ok, false);
+  if (!res.ok) {
+    assert.equal(res.error.code, "internal");
+    assert.doesNotMatch(res.error.message, /defeito no mapeamento/);
+  }
+  assert.equal(registrado.mock.callCount(), 1);
+});
+
+test("nome de tool repetido é recusado pelo registro", () => {
+  // `Object.fromEntries` mantinha a última: a primeira sumia sem erro, e o
+  // agente recebia uma superfície menor do que a que o autor escreveu.
+  const perfil = getService("ver_perfil");
+  assert.ok(perfil);
+  const uma = defineTool({
+    name: "repetida",
+    description: "Primeira tool com este nome, que sumiria em silêncio.",
+    service: perfil,
+  });
+  const outra = defineTool({
+    name: "repetida",
+    description: "Segunda tool com o mesmo nome, que sobrescreveria a primeira.",
+    service: perfil,
+  });
+
+  assert.throws(() => registerTools([uma, outra]), /já existe uma tool com este nome/);
+  // E o caminho normal continua funcionando.
+  assert.equal(Object.keys(registerTools([uma])).length, 1);
+});
+
 test("getTool só devolve tool registrada, nunca herdada", () => {
   // O nome vem do agente. Sem a checagem de propriedade própria,
   // `getTool("toString")` devolveria a função herdada do protótipo.
@@ -249,7 +336,11 @@ test("o registro de tools não reimplementa regra", () => {
     [/from\s+['"]next\//, "a tool não conhece o pedido HTTP"],
   ];
 
-  const arquivos = readdirSync(pasta).filter((nome) => nome.endsWith(".ts"));
+  // Recursivo: um arquivo em subpasta escaparia da varredura, e é justamente
+  // onde alguém poria um "helper" com a regra dentro.
+  const arquivos = readdirSync(pasta, { recursive: true, encoding: "utf8" }).filter(
+    (nome) => nome.endsWith(".ts"),
+  );
   assert.ok(arquivos.length > 0, "não achei os arquivos de lib/mcp");
 
   for (const arquivo of arquivos) {
