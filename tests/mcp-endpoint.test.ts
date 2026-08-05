@@ -37,6 +37,8 @@ const config: AuthConfig = {
 
 let privateKey: CryptoKey;
 let jwks: { keys: PublicJwk[] };
+/** O provedor de identidade está no ar? Desligar simula queda com cache frio. */
+let provedorNoAr = true;
 
 const agora = () => Math.floor(Date.now() / 1000);
 
@@ -94,6 +96,8 @@ before(async () => {
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (!provedorNoAr) throw new Error("provedor fora do ar (simulado)");
+
     if (url.endsWith("/.well-known/openid-configuration")) {
       return Response.json({
         issuer: ISSUER,
@@ -108,7 +112,10 @@ before(async () => {
   }) as typeof fetch;
 });
 
-beforeEach(() => resetDiscoveryCacheForTests());
+beforeEach(() => {
+  resetDiscoveryCacheForTests();
+  provedorNoAr = true;
+});
 
 interface RespostaRpc {
   status: number;
@@ -313,4 +320,19 @@ test("entrada inválida é recusada antes de tocar o serviço", async () => {
     res.corpo.error !== undefined || res.corpo.result?.isError === true,
     "mensagem vazia não pode passar",
   );
+});
+
+test("provedor fora do ar com cache frio vira 503, não 401", async (t) => {
+  // A diferença que importa para quem chama: 401 diz "seu token está ruim", e um
+  // cliente que acredita nisso DESCARTA um token bom e refaz um login que também
+  // não vai funcionar. A falha aqui é nossa — 503 é retentável, e é a verdade.
+  const registrado = t.mock.method(console, "error", () => {});
+  const token = await accessToken([]);
+
+  provedorNoAr = false;
+  const res = await chamar("tools/list", {}, token);
+
+  assert.equal(res.status, 503);
+  // E o detalhe da falha fica no log do provedor de deploy, não na resposta.
+  assert.ok(registrado.mock.callCount() >= 1);
 });

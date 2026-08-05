@@ -1,7 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 
 import { can } from "@/lib/auth/permissions";
-import { getSessionFromBearer } from "@/lib/auth/server";
+import { bearerGate } from "@/lib/auth/server";
 import type { Session } from "@/lib/auth/session";
 import { toolResultFromService } from "@/lib/mcp/result";
 import { TOOLS } from "@/lib/mcp/tools";
@@ -26,8 +26,10 @@ import { TOOLS } from "@/lib/mcp/tools";
  * ## Esta rota é enumerada como pública em `lib/auth/route-policy.ts`
  *
  * "Pública" ali significa dispensada do portão de **cookie** — um agente não tem
- * cookie. O portão continua existindo e é este arquivo: sem token válido, 401
- * antes de qualquer tool ser montada. Um portão trocado por outro, não removido.
+ * cookie. O portão continua existindo, é o `bearerGate` de `lib/auth/server.ts`, e
+ * ele roda antes de qualquer tool ser montada: 401 para quem não provou
+ * identidade, 503 quando a verificação não pôde acontecer. Um portão trocado por
+ * outro, não removido.
  *
  * ## Presença e execução saem do mesmo `can()`
  *
@@ -43,23 +45,6 @@ import { TOOLS } from "@/lib/mcp/tools";
  * `force-dynamic` porque a resposta depende de quem pediu.
  */
 export const dynamic = "force-dynamic";
-
-/**
- * 401 com `WWW-Authenticate`, que é o que diz ao cliente MCP **como** se
- * autenticar em vez de só que ele falhou.
- */
-function naoAutenticado(): Response {
-  return Response.json(
-    { error: "não autenticado" },
-    {
-      status: 401,
-      headers: {
-        "www-authenticate": 'Bearer realm="volund", error="invalid_token"',
-        "cache-control": "no-store",
-      },
-    },
-  );
-}
 
 /** Monta o servidor MCP para ESTE sujeito. */
 function handlerPara(session: Session) {
@@ -94,9 +79,9 @@ function handlerPara(session: Session) {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const session = await getSessionFromBearer(request);
-  if (!session) return naoAutenticado();
-  return handlerPara(session)(request);
+  const gate = await bearerGate(request);
+  if (!gate.ok) return gate.response;
+  return handlerPara(gate.session)(request);
 }
 
 /**
@@ -107,7 +92,7 @@ export async function POST(request: Request): Promise<Response> {
  * não sabe ler.
  */
 export async function GET(request: Request): Promise<Response> {
-  const session = await getSessionFromBearer(request);
-  if (!session) return naoAutenticado();
-  return handlerPara(session)(request);
+  const gate = await bearerGate(request);
+  if (!gate.ok) return gate.response;
+  return handlerPara(gate.session)(request);
 }
