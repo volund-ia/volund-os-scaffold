@@ -41,8 +41,14 @@ import type { z } from "zod";
 
 import type { Session } from "../auth/session";
 import { getService } from "../services/index";
-import type { AnyService, ServiceKind, ServiceResult } from "../services/types";
 import { verDiagnostico, verPerfil } from "../services/painel";
+import {
+  fail,
+  formatIssues,
+  type AnyService,
+  type ServiceKind,
+  type ServiceResult,
+} from "../services/types";
 
 /**
  * Marca de fábrica. Só `defineTool` a coloca, e o teste do registro exige que
@@ -134,6 +140,8 @@ export function defineTool(definition: ToolDefinition): Tool {
     );
   }
 
+  /** A tool declarou um schema PRÓPRIO, ou herdou o do serviço? */
+  const schemaProprio = definition.input !== undefined;
   const input = definition.input ?? service.input;
   const mapInput = definition.mapInput;
 
@@ -146,13 +154,66 @@ export function defineTool(definition: ToolDefinition): Tool {
     input,
     service,
 
-    call(session, raw) {
-      // Sem `try`, sem checagem de permissão, sem consulta ao banco: o serviço
-      // faz tudo isso, e é o mesmo caminho da tela e da rota. Se algum dia
-      // aparecer um `if` aqui decidindo alguma coisa, ele está no lugar errado.
-      return service.execute(session, mapInput ? mapInput(raw) : raw);
+    async call(session, raw) {
+      let entrada = raw;
+
+      // Conferir a forma que a PRÓPRIA tool anunciou não é decidir: a decisão
+      // continua no serviço, que revalida o resultado do mapeamento. Sem isto,
+      // duas coisas aconteciam com schema próprio: o contrato anunciado ao
+      // agente não era o aplicado, e `mapInput` rodava sobre entrada arbitrária
+      // — um mapeamento que acessa campo lançaria `TypeError` FORA de qualquer
+      // `try`, porque o do serviço só envolve o `run`, que vem depois.
+      if (schemaProprio) {
+        const parsed = input.safeParse(raw);
+        if (!parsed.success) {
+          return fail("invalid_input", "Dados inválidos.", {
+            issues: formatIssues(parsed.error),
+          });
+        }
+        entrada = parsed.data;
+      }
+
+      if (mapInput) {
+        try {
+          entrada = mapInput(entrada);
+        } catch (erro) {
+          // Entrada já validada não deveria quebrar o mapeamento; se quebrar, é
+          // defeito nosso, e vira falha interna com o detalhe no log — nunca uma
+          // exceção escapando para quem chamou.
+          console.error(`[tool ${name}] falhou ao traduzir a entrada:`, erro);
+          return fail("internal", "Não foi possível interpretar a entrada.");
+        }
+      }
+
+      // Daqui para baixo, nada. Sem checagem de permissão, sem consulta ao
+      // banco: o serviço faz tudo isso, e é o mesmo caminho da tela e da rota.
+      // Se algum dia aparecer um `if` aqui decidindo alguma coisa, ele está no
+      // lugar errado.
+      return service.execute(session, entrada);
     },
   };
+}
+
+/**
+ * Monta o registro recusando nome repetido.
+ *
+ * `Object.fromEntries` mantinha a última entrada, então duas tools com o mesmo
+ * nome viravam uma — a primeira sumia do registro sem erro, e o agente recebia
+ * uma superfície menor do que a que o autor escreveu. `defineTool` valida o
+ * formato do nome, não a unicidade; ela é do registro, que é quem vê o conjunto.
+ */
+export function registerTools(tools: Tool[]): Readonly<Record<string, Tool>> {
+  const registro: Record<string, Tool> = {};
+  for (const tool of tools) {
+    if (Object.hasOwn(registro, tool.name)) {
+      throw new Error(
+        `tool "${tool.name}": já existe uma tool com este nome no registro. ` +
+          `O nome é como o agente chama a capacidade, e duas capacidades não podem responder pelo mesmo nome.`,
+      );
+    }
+    registro[tool.name] = tool;
+  }
+  return Object.freeze(registro);
 }
 
 /**
@@ -162,24 +223,20 @@ export function defineTool(definition: ToolDefinition): Tool {
  * aplicação de verdade, `ler_avisos` e `publicar_aviso` são tools separadas,
  * sobre serviços separados — ver o comentário no topo do arquivo.
  */
-export const TOOLS: Readonly<Record<string, Tool>> = Object.freeze(
-  Object.fromEntries(
-    [
-      defineTool({
-        name: "ver_perfil",
-        description:
-          "Mostra quem está falando com este App: nome, e-mail, papéis e permissões concedidas. Use para saber em nome de quem você está agindo antes de tentar uma ação restrita.",
-        service: verPerfil,
-      }),
-      defineTool({
-        name: "ver_diagnostico",
-        description:
-          "Mostra os detalhes técnicos da instalação deste App (identificadores e se o banco está configurado). Exige permissão; use quando precisar conferir o ambiente antes de investigar um problema.",
-        service: verDiagnostico,
-      }),
-    ].map((tool) => [tool.name, tool]),
-  ),
-);
+export const TOOLS: Readonly<Record<string, Tool>> = registerTools([
+  defineTool({
+    name: "ver_perfil",
+    description:
+      "Mostra quem está falando com este App: nome, e-mail, papéis e permissões concedidas. Use para saber em nome de quem você está agindo antes de tentar uma ação restrita.",
+    service: verPerfil,
+  }),
+  defineTool({
+    name: "ver_diagnostico",
+    description:
+      "Mostra os detalhes técnicos da instalação deste App (identificadores e se o banco está configurado). Exige permissão; use quando precisar conferir o ambiente antes de investigar um problema.",
+    service: verDiagnostico,
+  }),
+]);
 
 /**
  * A tool com este nome, ou `undefined`.

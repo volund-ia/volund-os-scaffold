@@ -35,6 +35,7 @@ import type { Session } from "../auth/session";
 import { isPublicService } from "./policy";
 import {
   fail,
+  formatIssues,
   type Service,
   type ServiceDefinition,
   type ServiceResult,
@@ -122,16 +123,12 @@ export function defineService<Schema extends z.ZodType, Output>(
 
       const parsed = definition.input.safeParse(input);
       if (!parsed.success) {
+        // `formatIssues` é o mesmo formato de `lib/validation.ts` (caminho +
+        // mensagem por campo), escrito aqui em vez de importado dali porque
+        // aquele módulo é a fronteira HTTP, e esta camada não depende dela — é o
+        // que mantém o serviço utilizável por qualquer porta.
         return fail("invalid_input", "Dados inválidos.", {
-          // Caminho + mensagem por campo, o mesmo formato de `lib/validation.ts`.
-          // Repetido em vez de importado porque aquele módulo é a fronteira HTTP,
-          // e esta camada não depende dela — é o que mantém o serviço utilizável
-          // por qualquer porta.
-          issues: parsed.error.issues.map((problema) =>
-            problema.path.length
-              ? `${problema.path.join(".")}: ${problema.message}`
-              : problema.message,
-          ),
+          issues: formatIssues(parsed.error),
         });
       }
 
