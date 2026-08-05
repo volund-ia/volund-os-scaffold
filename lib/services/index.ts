@@ -10,12 +10,14 @@
  * Serviço novo entra aqui na mesma mudança em que nasce.
  */
 
+import { ecoar } from "./eco";
 import { verDiagnostico, verPerfil } from "./painel";
 import type { AnyService } from "./types";
 
 export const SERVICES: Readonly<Record<string, AnyService>> = Object.freeze({
   [verPerfil.name]: verPerfil,
   [verDiagnostico.name]: verDiagnostico,
+  [ecoar.name]: ecoar,
 });
 
 /**

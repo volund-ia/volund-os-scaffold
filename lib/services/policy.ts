@@ -32,6 +32,8 @@ export const PUBLIC_SERVICES: readonly string[] = [
   // O painel de exemplo mostra à pessoa os dados da própria sessão. Não há o que
   // restringir: quem tem sessão já é o dono do que este serviço devolve.
   "ver_perfil",
+  // Repete de volta o que a própria pessoa mandou. Não alcança dado de ninguém.
+  "ecoar",
 ];
 
 /** O serviço está declarado como "não exige permissão"? */

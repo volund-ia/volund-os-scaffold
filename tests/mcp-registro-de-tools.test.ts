@@ -112,17 +112,53 @@ test("toda tool protegida recusa quem não tem a permissão — e atende quem te
       assert.equal(negado.error.permission, permissao);
     }
 
+    // A entrada vazia não serve para toda tool, e este teste não é sobre
+    // entrada: o que ele vigia é o eixo da permissão. Quem tem a permissão pode
+    // até tomar `invalid_input` — o que não pode é tomar `forbidden`.
     const permitido = await tool.call(sessao([permissao]), {});
-    assert.equal(permitido.ok, true, `${tool.name} recusou quem tem a permissão`);
+    if (!permitido.ok) {
+      assert.notEqual(
+        permitido.error.code,
+        "forbidden",
+        `${tool.name} recusou por permissão quem tem a permissão`,
+      );
+    }
   }
 });
 
-test("tool sem permissão atende quem só tem sessão", async () => {
+test("tool sem permissão não é barrada por permissão", async () => {
   const semPermissao = Object.values(TOOLS).filter((tool) => tool.permission === null);
   assert.ok(semPermissao.length > 0, "o exemplo precisa cobrir os dois casos");
   for (const tool of semPermissao) {
     const res = await tool.call(sessao(), {});
-    assert.equal(res.ok, true, `${tool.name} recusou quem tem sessão`);
+    if (!res.ok) {
+      // Mesma razão do caso acima: `ecoar` exige uma mensagem, e cobrar entrada
+      // válida de toda tool aqui faria este teste falhar por motivo alheio.
+      for (const codigo of ["forbidden", "unauthenticated"] as const) {
+        assert.notEqual(
+          res.error.code,
+          codigo,
+          `${tool.name} respondeu ${codigo} a quem tem sessão e não exige permissão`,
+        );
+      }
+    }
+  }
+});
+
+test("com a permissão concedida, a tool de exemplo atende de fato", async () => {
+  // O caso positivo concreto, com entrada válida. Os dois testes acima varrem
+  // todas as tools e por isso não podem exigir sucesso; este exige.
+  const diagnostico = getTool("ver_diagnostico");
+  assert.ok(diagnostico);
+  const res = await diagnostico.call(sessao(["ver_diagnostico"]), {});
+  assert.equal(res.ok, true);
+
+  const eco = getTool("ecoar");
+  assert.ok(eco);
+  const resEco = await eco.call(sessao(), { mensagem: "oi", repetir: 2 });
+  assert.equal(resEco.ok, true);
+  if (resEco.ok) {
+    assert.deepEqual((resEco.data as { eco: string[] }).eco, ["oi", "oi"]);
   }
 });
 
