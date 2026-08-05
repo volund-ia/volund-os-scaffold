@@ -16,7 +16,12 @@ import {
 } from "./config";
 import { seal, unseal } from "./crypto";
 import { loadDiscovery, loadJwks } from "./discovery";
-import { readExpiryWithoutVerifying, verifyAccessToken, verifyIdToken } from "./jwt";
+import {
+  readExpiryWithoutVerifying,
+  verifyAccessToken,
+  verifyIdToken,
+  type TokenClaims,
+} from "./jwt";
 
 const SESSION_PURPOSE = "session";
 const HANDSHAKE_PURPOSE = "handshake";
@@ -120,7 +125,19 @@ export async function readSession(
   });
   if (!result.ok) return null;
 
-  const { claims } = result;
+  return sessionFromClaims(result.claims, payload.accessToken);
+}
+
+/**
+ * Claims verificados → `Session`.
+ *
+ * Existe separado porque há **duas** portas de entrada para a mesma sessão: o
+ * cookie da tela e o `Authorization: Bearer` do MCP. Se cada uma montasse a
+ * `Session` por conta própria, um campo novo entraria numa e não na outra — e o
+ * sintoma seria o agente ver uma identidade diferente da que a pessoa vê, o que é
+ * exatamente a divergência que esta arquitetura existe para não ter.
+ */
+function sessionFromClaims(claims: TokenClaims, accessToken: string): Session {
   return {
     userId: claims.sub,
     orgId: claims.org_id ?? "",
@@ -129,8 +146,34 @@ export async function readSession(
     name: claims.name ?? null,
     roles: Array.isArray(claims.roles) ? claims.roles : [],
     permissions: Array.isArray(claims.permissions) ? claims.permissions : [],
-    accessToken: payload.accessToken,
+    accessToken,
   };
+}
+
+/**
+ * Sessão a partir de um access token apresentado no cabeçalho — o caminho do MCP.
+ *
+ * É a **mesma** verificação da sessão web: mesmo JWKS, mesmo emissor, mesma
+ * audiência (`volund:app:<appAgentId>`), mesmo `azp`, mesmo mapeamento de claims.
+ * O que muda é só de onde o token veio — cookie selado numa ponta, cabeçalho na
+ * outra. Não há população de identidade própria para o MCP, não há chave por App:
+ * o `Session` que chega ao serviço é indistinguível do que chega pela tela.
+ */
+export async function readSessionFromAccessToken(
+  accessToken: string | undefined | null,
+  config: AuthConfig,
+): Promise<Session | null> {
+  if (!accessToken) return null;
+
+  const keys = await loadJwks(config.issuer);
+  const result = await verifyAccessToken(accessToken, {
+    keys,
+    issuer: config.issuer,
+    clientId: config.clientId,
+  });
+  if (!result.ok) return null;
+
+  return sessionFromClaims(result.claims, accessToken);
 }
 
 /** A sessão precisa ser renovada antes de ser usada nesta requisição? */

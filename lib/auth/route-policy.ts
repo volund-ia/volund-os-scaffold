@@ -43,6 +43,16 @@ export const PUBLIC_ROUTES: readonly string[] = [
   // Retorno do provedor. Protegê-lo faria o login nunca terminar: ele é
   // chamado antes de a sessão existir, e é ele quem a estabelece.
   AUTH_CALLBACK_PATH,
+  // Endpoint MCP. Público **para o portão de cookie**, e não para o mundo: quem
+  // chama é um agente, que apresenta `Authorization: Bearer <access token>` e não
+  // tem cookie nenhum. Exigir sessão de cookie aqui recusaria toda chamada de
+  // agente antes de o token ser sequer lido.
+  //
+  // O portão continua existindo, e é o próprio endpoint: sem token válido ele
+  // responde 401 (`app/api/mcp/route.ts`), e cada tool passa pelo `can()` do
+  // serviço. Enumerar esta rota aqui troca UM portão por outro — não remove
+  // nenhum.
+  "/api/mcp",
   // Asset que a vitrine precisa mostrar a quem ainda não entrou vem aqui, um
   // por linha e com o motivo ao lado. Exemplo:
   //   "/imagens/capa.png",  // ilustração da vitrine

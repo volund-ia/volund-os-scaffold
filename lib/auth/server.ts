@@ -25,7 +25,7 @@ import {
   type AuthConfig,
 } from "./config";
 import { can } from "./permissions";
-import { readSession, type Session } from "./session";
+import { readSession, readSessionFromAccessToken, type Session } from "./session";
 
 /**
  * Sessão atual, ou `null`.
@@ -43,6 +43,76 @@ export async function getSession(): Promise<Session | null> {
   }
   const jar = await cookies();
   return readSession(jar.get(SESSION_COOKIE)?.value, config);
+}
+
+/**
+ * Portão de quem chega com `Authorization: Bearer <access token>` — a porta do
+ * MCP.
+ *
+ * Não é uma autenticação nova: é a **mesma** validação da sessão web sobre um
+ * token que veio no cabeçalho em vez do cookie (ver
+ * `readSessionFromAccessToken`). Um agente que chama o MCP deste App apresenta o
+ * mesmo access token que o navegador da pessoa apresentaria, e o `can()` responde
+ * a mesma coisa para os dois.
+ *
+ * ## Por que ele distingue "não provou" de "não deu para verificar"
+ *
+ * **401** é para quem não provou identidade: sem cabeçalho, esquema diferente de
+ * `Bearer`, token inválido, expirado, ou de outro App. Um só motivo na resposta,
+ * porque detalhar ajudaria quem está adivinhando.
+ *
+ * **503** é para quando a verificação não pôde acontecer: o provedor de
+ * identidade fora do ar com o cache de chaves frio, ou a configuração da
+ * autenticação ausente. Responder 401 nesse caso seria dizer ao cliente que o
+ * token dele está ruim — e um cliente que acredita nisso **descarta um token
+ * bom** e refaz o login que não vai funcionar. A falha é nossa, e o status tem de
+ * dizer isso: 503 é retentável, 401 não.
+ *
+ * O detalhe do erro vai para o log do provedor de deploy, nunca para a resposta.
+ */
+export type BearerGate =
+  { ok: true; session: Session } | { ok: false; response: Response };
+
+function recusaBearer(status: 401 | 503, erro: string): BearerGate {
+  const headers: Record<string, string> = { "cache-control": "no-store" };
+  if (status === 401) {
+    // Diz ao cliente MCP COMO se autenticar, e não só que ele falhou.
+    headers["www-authenticate"] = 'Bearer realm="volund", error="invalid_token"';
+  }
+  return { ok: false, response: Response.json({ error: erro }, { status, headers }) };
+}
+
+export async function bearerGate(request: Request): Promise<BearerGate> {
+  let config: AuthConfig;
+  try {
+    config = readAuthConfig();
+  } catch (err) {
+    // Sem as variáveis não há como verificar nada. É falha de configuração
+    // nossa, e o proxy responde 503 pelo mesmo motivo — nunca degradar para
+    // acesso aberto, nunca culpar o token de quem chamou.
+    console.error("[auth] MCP sem configuração de autenticação:", err);
+    return recusaBearer(503, "autenticação não configurada");
+  }
+
+  const header = request.headers.get("authorization") ?? "";
+  const [esquema, token] = header.split(" ");
+  if (esquema?.toLowerCase() !== "bearer" || !token) {
+    return recusaBearer(401, "não autenticado");
+  }
+
+  let session: Session | null;
+  try {
+    session = await readSessionFromAccessToken(token, config);
+  } catch (err) {
+    // Descoberta OIDC ou JWKS indisponíveis com o cache frio: `loadJwks` recua
+    // para o cache velho quando existe, e lança quando não existe. Deixar a
+    // exceção subir daqui viraria erro não tratado no handler do MCP.
+    console.error("[auth] não foi possível verificar o token do MCP:", err);
+    return recusaBearer(503, "não foi possível verificar a autenticação");
+  }
+
+  if (!session) return recusaBearer(401, "não autenticado");
+  return { ok: true, session };
 }
 
 export type Gate =
