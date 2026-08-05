@@ -18,9 +18,17 @@ export const SERVICES: Readonly<Record<string, AnyService>> = Object.freeze({
   [verDiagnostico.name]: verDiagnostico,
 });
 
-/** O serviço com este nome, ou `undefined`. */
+/**
+ * O serviço com este nome, ou `undefined`.
+ *
+ * O `Object.hasOwn` não é zelo: a busca é por um nome que vem de **fora** — a
+ * rota e, adiante, a tool chamada pelo agente pedem o serviço pelo nome que
+ * receberam. Sem ele, `getService("toString")` devolveria a função herdada de
+ * `Object.prototype`, que passa por qualquer teste de "achou?" e estoura no
+ * `execute` que não existe. O tipo diz `undefined`; a função tem de cumprir.
+ */
 export function getService(name: string): AnyService | undefined {
-  return SERVICES[name];
+  return Object.hasOwn(SERVICES, name) ? SERVICES[name] : undefined;
 }
 
 export { defineService } from "./define";

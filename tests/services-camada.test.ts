@@ -273,17 +273,38 @@ test("nenhuma entrada de PUBLIC_SERVICES sobra sem serviço", () => {
   }
 });
 
+test("getService só devolve serviço registrado, nunca herdado", () => {
+  // O nome vem de FORA: a rota — e, adiante, a tool que o agente chama — pede o
+  // serviço pelo nome que recebeu. Sem a checagem de propriedade própria,
+  // `getService("toString")` devolveria a função herdada de `Object.prototype`:
+  // passa por qualquer teste de "achou?" e estoura no `execute` que não existe.
+  for (const herdado of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+    assert.equal(
+      getService(herdado),
+      undefined,
+      `getService(${JSON.stringify(herdado)}) devolveu algo que não é um serviço`,
+    );
+  }
+  assert.ok(getService("ver_perfil"), "o serviço registrado continua sendo achado");
+});
+
 test("a camada de serviço não conhece HTTP", () => {
   // É o que permite a mesma decisão servir a tela, a rota e a tool: um serviço que
   // devolva resposta HTTP só serve à porta para a qual foi escrito, e a próxima
   // porta ganha uma segunda implementação da regra.
   const pasta = path.join(import.meta.dirname, "..", "lib", "services");
+  // As aspas são as duas: o `prettier` normaliza para aspas duplas, mas um teste
+  // que só enxerga o que a formatação produz deixa de enxergar justamente o
+  // arquivo que chegou torto — e este teste existe para o caso em que algo passou.
   const proibidos: [RegExp, string][] = [
-    [/from\s+"next\//, "importar de `next/` traz o pedido HTTP para dentro da regra"],
+    [
+      /from\s+['"]next\//,
+      "importar de `next/` traz o pedido HTTP para dentro da regra",
+    ],
     [/\bNextResponse\b/, "resposta HTTP é trabalho da rota"],
     [/\bResponse\.json\(/, "resposta HTTP é trabalho da rota"],
     [/new\s+Response\(/, "resposta HTTP é trabalho da rota"],
-    [/from\s+"\.\.\/\.\.\/app\//, "serviço não depende de rota nem de página"],
+    [/from\s+['"]\.\.\/\.\.\/app\//, "serviço não depende de rota nem de página"],
   ];
 
   const arquivos = readdirSync(pasta).filter((nome) => nome.endsWith(".ts"));
