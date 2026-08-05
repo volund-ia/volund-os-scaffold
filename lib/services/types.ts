@@ -90,6 +90,24 @@ export function fail(
 }
 
 /**
+ * Problemas de um `safeParse` no formato de `ServiceError.issues`: um item por
+ * campo, `campo: problema`.
+ *
+ * Existe aqui, e não em cada chamador, porque o formato é o que o cliente lê
+ * para saber o que corrigir. Duas cópias divergem — e o sintoma é uma tela que
+ * aponta o campo errado.
+ */
+export function formatIssues(error: {
+  issues: readonly { path: readonly PropertyKey[]; message: string }[];
+}): string[] {
+  return error.issues.map((problema) =>
+    problema.path.length
+      ? `${problema.path.map(String).join(".")}: ${problema.message}`
+      : problema.message,
+  );
+}
+
+/**
  * O que o autor de um serviço escreve.
  *
  * `run` só é chamado depois de a sessão existir, a permissão ter sido conferida
