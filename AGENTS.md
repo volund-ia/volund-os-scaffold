@@ -30,15 +30,16 @@ automaticamente.
 
 ## Onde cada coisa mora
 
-| Pasta         | Conteúdo                                                               |
-| ------------- | ---------------------------------------------------------------------- |
-| `app/`        | Rotas. Página é `page.tsx`; endpoint é `route.ts` dentro de `app/api/` |
-| `components/` | Componentes de interface reutilizáveis, um por arquivo                 |
-| `lib/`        | Acesso a dados, integrações, funções de apoio                          |
-| `types/`      | Tipos usados por mais de um módulo                                     |
-| `lib/auth/`   | Autenticação da plataforma. **Pronta — não reimplemente.** Veja abaixo |
-| `migrations/` | Todo SQL aplicado ao banco, um arquivo por mudança                     |
-| `tests/`      | Testes, com `.test.ts` no nome                                         |
+| Pasta           | Conteúdo                                                               |
+| --------------- | ---------------------------------------------------------------------- |
+| `app/`          | Rotas. Página é `page.tsx`; endpoint é `route.ts` dentro de `app/api/` |
+| `components/`   | Componentes de interface reutilizáveis, um por arquivo                 |
+| `lib/services/` | **A regra de negócio.** Uma decisão por serviço. Veja abaixo           |
+| `lib/`          | Acesso a dados, integrações, funções de apoio                          |
+| `types/`        | Tipos usados por mais de um módulo                                     |
+| `lib/auth/`     | Autenticação da plataforma. **Pronta — não reimplemente.** Veja abaixo |
+| `migrations/`   | Todo SQL aplicado ao banco, um arquivo por mudança                     |
+| `tests/`        | Testes, com `.test.ts` no nome                                         |
 
 ## Autenticação
 
@@ -115,6 +116,62 @@ estava certa, a interface é que prometia o que não existia para aquela pessoa.
 
 Se o usuário pedir "coloca um login no app", a resposta é que ele já tem: mostre
 a `/` (vitrine, pública) e a `/painel` (protegida), que são o exemplo pronto.
+
+## Regra de negócio
+
+**Toda decisão da aplicação mora em `lib/services/`.** Um serviço recebe a sessão
+e a entrada, decide, e devolve resultado — `(session, entrada) → resultado`:
+
+```ts
+import { z } from "zod";
+
+import { query } from "@/lib/db";
+import { defineService } from "@/lib/services/define";
+import { ok } from "@/lib/services/types";
+
+export const publicarAviso = defineService({
+  name: "publicar_aviso", // minúsculas com `_`, como as chaves de permissão
+  summary: "Publica um aviso no quadro da organização.",
+  kind: "write", // "read" quando o serviço só lê
+  permission: "publicar_aviso", // do catálogo do App, sem namespace
+  input: z.object({ texto: z.string().min(1).max(280) }),
+  run: async (session, input) => {
+    const res = await query<{ id: string }>(
+      "insert into avisos (org_id, autor_id, texto) values ($1, $2, $3) returning id",
+      [session.orgId, session.userId, input.texto],
+    );
+    return ok({ id: res.rows[0]?.id ?? null });
+  },
+});
+```
+
+Serviço novo entra em `lib/services/index.ts` na mesma mudança em que nasce.
+
+**O que `defineService` faz por você** — e por isso você não repete em cada
+serviço: recusa quem chega sem sessão, confere `can(session, permission)` antes de
+rodar, valida a entrada pelo schema declarado e transforma exceção em falha
+`internal` sem vazar detalhe de infraestrutura para quem chamou. Precisa de uma
+checagem a mais (por registro, por dono)? Chame `can()` dentro de `run` — o portão
+é o piso, não o teto.
+
+**O serviço não conhece HTTP.** Nem resposta, nem status, nem cabeçalho, nem
+cookie. Quem traduz é quem chama: uma página (Server Component) chama o serviço
+direto, no mesmo processo, e mostra o que veio; um componente de cliente chama a
+rota de API, e a rota chama o mesmo serviço. `app/painel/page.tsx` é o exemplo
+pronto.
+
+**Por que a decisão não mora na página nem na rota.** Porque a mesma decisão é
+alcançada por mais de uma porta, e regra escrita duas vezes diverge na terceira
+mudança — sem dar erro, só respondendo diferente em cada porta para a mesma
+pergunta. Numa aplicação de reservas isso é a API marcar uma sala que a tela não
+deixaria marcar, e o dono da sala descobrir depois.
+
+**Serviço que não exige permissão** declara `permission: null` **e** tem o nome
+listado em `lib/services/policy.ts`, com o motivo ao lado. As duas coisas, porque
+público por decisão e público por esquecimento são idênticos em tempo de execução
+— só a declaração os separa. `defineService` recusa a definição que tenha uma sem
+a outra. Sessão continua sendo exigida em todos: "público" aqui é sobre permissão,
+não sobre sessão.
 
 ## Interface
 
