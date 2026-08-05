@@ -63,8 +63,17 @@ let jwks: { keys: PublicJwk[] };
 let concedidas: string[] = [PERMISSAO];
 /** O refresh token continua valendo? O provedor derruba a família ao revogá-lo. */
 let refreshValido = true;
-/** Quantas vezes o token endpoint foi chamado — o caminho quente não o chama. */
-let chamadasAoProvedor = 0;
+/**
+ * O refresh token que vale AGORA. O provedor rotaciona a cada uso e derruba a
+ * família inteira se o anterior reaparecer — modelar isso é o que permite provar
+ * a rotação em vez de descrevê-la.
+ */
+let refreshAtivo = "refresh-1";
+let proximoRefresh = 2;
+/** Idas ao token endpoint. O caminho quente não faz nenhuma. */
+let chamadasAoTokenEndpoint = 0;
+/** Todo caminho do provedor que o App visitou, para poder afirmar o que visitou. */
+let caminhosVisitados: string[] = [];
 
 const agora = () => Math.floor(Date.now() / 1000);
 
@@ -127,8 +136,10 @@ before(async () => {
     keys: [{ kty: jwk.kty, n: jwk.n, e: jwk.e, kid: KID, alg: "RS256", use: "sig" }],
   };
 
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    caminhosVisitados.push(new URL(url).pathname);
+
     if (url.endsWith("/.well-known/openid-configuration")) {
       return Response.json({
         issuer: ISSUER,
@@ -142,11 +153,25 @@ before(async () => {
     if (url.endsWith("/.well-known/jwks.json")) return Response.json(jwks);
 
     if (url.endsWith("/oauth/token")) {
-      chamadasAoProvedor += 1;
+      chamadasAoTokenEndpoint += 1;
       if (!refreshValido) {
-        // Família derrubada: refresh expirado, revogado ou reapresentado.
+        // Família derrubada: refresh expirado ou revogado.
         return Response.json({ error: "invalid_grant" }, { status: 400 });
       }
+
+      const apresentado = new URLSearchParams(String(init?.body ?? "")).get(
+        "refresh_token",
+      );
+      if (apresentado !== refreshAtivo) {
+        // Reapresentação do anterior: o provedor derruba a família INTEIRA, e não
+        // só recusa esta tentativa. É o que impede um refresh copiado de render
+        // sessão para sempre em paralelo à legítima.
+        refreshValido = false;
+        return Response.json({ error: "invalid_grant" }, { status: 400 });
+      }
+      refreshAtivo = `refresh-${proximoRefresh}`;
+      proximoRefresh += 1;
+
       // O provedor RECALCULA as permissões a cada emissão. É esta linha que
       // fecha a janela: o token novo reflete o que vale agora, não o que valia
       // quando a sessão começou.
@@ -154,7 +179,7 @@ before(async () => {
         token_type: "Bearer",
         expires_in: 600,
         access_token: await accessToken(concedidas, agora() + 600),
-        refresh_token: "refresh-2",
+        refresh_token: refreshAtivo,
       });
     }
     throw new Error(`fetch inesperado no teste: ${url}`);
@@ -165,7 +190,10 @@ beforeEach(() => {
   resetDiscoveryCacheForTests();
   concedidas = [PERMISSAO];
   refreshValido = true;
-  chamadasAoProvedor = 0;
+  refreshAtivo = "refresh-1";
+  proximoRefresh = 2;
+  chamadasAoTokenEndpoint = 0;
+  caminhosVisitados = [];
 });
 
 /** As três portas da mesma decisão, exercitadas com a mesma sessão. */
@@ -185,7 +213,7 @@ async function tresPortas(session: Session | null) {
   };
 }
 
-test("dentro da janela, a chamada revogada AINDA passa — e é aceito", async () => {
+test("dentro da janela, a chamada revogada ainda passa — e nada é perguntado sobre a pessoa", async () => {
   // Token recém-emitido, com a permissão. Longe de expirar.
   const selado = await cookie([PERMISSAO], agora() + 600);
 
@@ -206,9 +234,18 @@ test("dentro da janela, a chamada revogada AINDA passa — e é aceito", async (
   assert.equal(portas.tool.ok, true, "a tool ainda atende dentro da janela");
   assert.equal(portas.rota.status, 200, "a rota ainda atende dentro da janela");
 
-  // E o ponto que justifica a janela: nada disto consultou a plataforma. Ela
-  // fica fora do caminho quente, e é por isso que a revogação não é instantânea.
-  assert.equal(chamadasAoProvedor, 0);
+  // E o ponto que justifica a janela: nada disto PERGUNTOU ao provedor o que esta
+  // pessoa pode. Não houve renovação...
+  assert.equal(chamadasAoTokenEndpoint, 0, "não deveria ter renovado nada");
+  // ...e o único tráfego para o provedor foi material PÚBLICO — descoberta e
+  // chaves de assinatura, que não dependem de quem chama e ficam em cache. É
+  // essa ausência de pergunta sobre a pessoa que a janela compra.
+  assert.ok(caminhosVisitados.length > 0, "verificar o token exige as chaves");
+  assert.deepEqual(
+    caminhosVisitados.filter((caminho) => !caminho.startsWith("/.well-known/")),
+    [],
+    `houve tráfego específico da pessoa: ${JSON.stringify(caminhosVisitados)}`,
+  );
 });
 
 test("na renovação, a permissão revogada deixa de valer nas três portas", async () => {
@@ -236,7 +273,7 @@ test("na renovação, a permissão revogada deixa de valer nas três portas", as
     refreshToken: payload.refreshToken,
   });
   const novoSelado = await sealSession(renovada, config);
-  assert.equal(chamadasAoProvedor, 1);
+  assert.equal(chamadasAoTokenEndpoint, 1);
 
   const depois = await readSession(novoSelado, config);
   assert.ok(depois, "a sessão continua existindo — o que mudou é o que ela pode");
@@ -271,12 +308,45 @@ test("o cookie renovado é o que a próxima requisição lê", async () => {
   const relido = await readSealedPayload(novoSelado, config);
   assert.ok(relido);
   assert.notEqual(relido.accessToken, payload.accessToken);
-  // O refresh também rotaciona: guardar o antigo derrubaria a sessão no uso
-  // seguinte, porque o provedor recusa o reapresentado.
+  // O refresh também rotaciona — o token guardado é o novo, não o usado.
   assert.equal(relido.refreshToken, "refresh-2");
+  assert.notEqual(relido.refreshToken, payload.refreshToken);
 
   const session = await readSession(novoSelado, config);
   assert.deepEqual(session?.permissions, []);
+});
+
+test("reapresentar o refresh anterior derruba a família inteira", async () => {
+  // Por que a rotação importa, e por que não basta guardar o token novo: se o
+  // anterior continuasse valendo, uma cópia dele renderia sessão em paralelo à
+  // legítima, indefinidamente. O provedor recusa o reapresentado E derruba a
+  // família — então o certo é NÃO guardar o antigo, que é o que `sealSession`
+  // faz ao salvar só o payload novo.
+  const selado = await cookie([PERMISSAO], agora() + 30);
+  const payload = await readSealedPayload(selado, config);
+  assert.ok(payload);
+
+  const renovada = await refreshSession({
+    config,
+    refreshToken: payload.refreshToken,
+  });
+  assert.equal(renovada.refreshToken, "refresh-2");
+
+  // O anterior, reapresentado, é recusado.
+  await assert.rejects(
+    () => refreshSession({ config, refreshToken: payload.refreshToken }),
+    /token endpoint recusou/,
+    "o refresh anterior deveria ter deixado de valer",
+  );
+
+  // E não é só esta tentativa: a família cai, então nem o token novo renova
+  // mais. Quem trata isso é o `proxy.ts`, recusando a requisição — a sessão
+  // acabou, e a pessoa entra de novo pelo login.
+  await assert.rejects(
+    () => refreshSession({ config, refreshToken: renovada.refreshToken }),
+    /token endpoint recusou/,
+    "a família deveria ter caído junto",
+  );
 });
 
 test("refresh revogado encerra a sessão em vez de rebaixá-la", async () => {
