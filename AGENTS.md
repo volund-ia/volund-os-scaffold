@@ -35,6 +35,8 @@ automaticamente.
 | `app/`          | Rotas. Página é `page.tsx`; endpoint é `route.ts` dentro de `app/api/` |
 | `components/`   | Componentes de interface reutilizáveis, um por arquivo                 |
 | `lib/services/` | **A regra de negócio.** Uma decisão por serviço. Veja abaixo           |
+| `lib/mcp/`      | Registro das tools que um agente pode chamar. Adaptadores, sem regra   |
+| `lib/http/`     | A porta HTTP dos serviços: entrada e tradução de erro                  |
 | `lib/`          | Acesso a dados, integrações, funções de apoio                          |
 | `types/`        | Tipos usados por mais de um módulo                                     |
 | `lib/auth/`     | Autenticação da plataforma. **Pronta — não reimplemente.** Veja abaixo |
@@ -207,6 +209,55 @@ público por decisão e público por esquecimento são idênticos em tempo de ex
 — só a declaração os separa. `defineService` recusa a definição que tenha uma sem
 a outra. Sessão continua sendo exigida em todos: "público" aqui é sobre permissão,
 não sobre sessão.
+
+## A ordem de construir: serviço → rota → tool
+
+Uma capacidade deste App é alcançada por três portas — a tela, a rota de API e a
+tool de MCP que um agente chama. Construa **nesta ordem**, sempre:
+
+1. **O serviço**, em `lib/services/`, e registre em `lib/services/index.ts`. É
+   aqui que a regra existe: quem pode, o que é válido, o que acontece.
+2. **A rota**, em `app/api/<recurso>/route.ts`, com `serviceRoute`. A tela usa
+   esta porta (e uma página Server Component pode chamar o serviço direto).
+3. **A tool**, em `lib/mcp/tools.ts`, com `defineTool`, apontando para o mesmo
+   serviço:
+
+```ts
+defineTool({
+  name: "publicar_aviso", // como o AGENTE chama a capacidade
+  description:
+    "Publica um aviso no quadro da organização. Use quando o usuário pedir para avisar o time; recusa texto vazio e acima de 280 caracteres.",
+  service: publicarAviso, // o MESMO serviço que a rota chama
+});
+```
+
+A descrição é para o **agente** decidir quando usar a tool, não para quem lê o
+código: diga o que faz, quando usar e o que recusa. `kind` e `permission` não são
+declarados na tool — saem do serviço, para não haver duas declarações capazes de
+divergir.
+
+> ### Não reimplemente a regra na tool
+>
+> Nada de consultar o banco na tool, nada de conferir permissão na tool, nada de
+> "só uma validação a mais" na tool. Uma tool com regra própria vira uma segunda
+> implementação da mesma decisão, e as duas divergem na terceira mudança — **sem
+> dar erro**, apenas respondendo diferente para a mesma pergunta. Numa aplicação
+> de reservas, é a tool marcar uma sala que a tela não deixaria marcar, e o dono
+> da sala descobrir depois.
+>
+> Por isso `defineTool` não recebe um corpo para executar: recebe o **serviço**.
+> Se você estiver escrevendo lógica dentro de uma tool, ela pertence a um serviço.
+
+**Uma tool nunca mistura leitura e escrita.** Quem opera o agente autoriza e pede
+aprovação **por tool**: uma tool que lê e grava faria "liberar a consulta"
+liberar a gravação junto, e nenhuma configuração de aprovação conseguiria separar
+depois. Ler e gravar são **duas** tools, sobre dois serviços — `ler_avisos` e
+`publicar_aviso`, nunca um `gerenciar_avisos`.
+
+**Não pule a ordem.** Escrever a tool antes do serviço é o caminho pelo qual a
+regra nasce dentro dela; escrever a rota antes do serviço é o mesmo erro na outra
+porta. O teste `tests/mcp-registro-de-tools.test.ts` reprova tool que não chama
+serviço, mas ele reprova o resultado — a ordem é o que evita o retrabalho.
 
 ## Interface
 
