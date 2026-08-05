@@ -98,6 +98,16 @@ nenhum acesso nasce implícito. Declare, proteja com `can()` e **diga ao usuári
 que ele precisa conceder na aba Segurança** — é um clique dele, não uma mudança
 de código.
 
+**Conceder e revogar leva até dez minutos para valer, e isso é de propósito.** As
+permissões viajam **dentro** da sessão de quem está usando o App, e ela é
+renovada de tempo em tempo; nenhuma requisição pergunta à plataforma "esta pessoa
+ainda pode?", o que é o que mantém o App rápido e de pé mesmo se a plataforma
+estiver fora. As duas consequências, que valem dizer ao usuário antes de ele
+perguntar: quem **acabou de receber** acesso pode precisar recarregar (ou sair e
+entrar) para ver a mudança, e quem teve o acesso **revogado** continua entrando
+até a renovação seguinte. Não é defeito, e a janela fecha sozinha — na renovação
+as permissões são recalculadas.
+
 > **Não construa uma lista de administradores dentro do banco do App** — nem por
 > e-mail, nem por id, nem uma "tabela de papéis" própria. Já aconteceu duas
 > vezes: o resultado é uma lista paralela sem auditoria, sem revogação,
