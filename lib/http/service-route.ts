@@ -77,6 +77,19 @@ export interface ServiceRouteOptions {
   /**
    * De onde vem a entrada do serviço: do corpo JSON (`POST`/`PUT`/`PATCH`) ou
    * dos parâmetros de query (`GET`).
+   *
+   * **Com `"query"`, dois limites que o schema do serviço não corrige sozinho:**
+   *
+   * 1. **Todo valor chega como texto.** Um serviço com `z.number()` na entrada
+   *    responde 400 mesmo com a query certa. Use `z.coerce.number()` (ou
+   *    equivalente) no schema do próprio serviço.
+   * 2. **Chave repetida fica só com o último valor.** `?tag=a&tag=b` chega como
+   *    `{ tag: "b" }`, então um serviço que espera lista nunca a recebe. Se a
+   *    rota precisa de lista, escreva o handler à mão — leia `getAll()` e chame
+   *    o serviço com o array pronto.
+   *
+   * Os dois são seguros (a recusa é explícita, não silenciosa); o problema é de
+   * descoberta, e por isso estão escritos aqui e exercitados em teste.
    */
   from: "json" | "query";
   /**

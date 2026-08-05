@@ -22,7 +22,10 @@ const entrada = z.object({
     .string()
     .min(1, "não pode ser vazia")
     .max(280, "máximo de 280 caracteres"),
-  repetir: z.number().int().min(1).max(5).optional(),
+  // `.default(1)` e não `.optional()` com um `?? 1` no `run`: assim o default é
+  // parte do CONTRATO — aparece no schema que a tool anuncia ao agente, em vez de
+  // ficar escondido no corpo do serviço.
+  repetir: z.number().int().min(1).max(5).default(1),
 });
 
 export interface Eco {
@@ -40,7 +43,7 @@ export const ecoar = defineService({
   input: entrada,
   run: (_session, input) =>
     ok<Eco>({
-      eco: Array.from({ length: input.repetir ?? 1 }, () => input.mensagem),
+      eco: Array.from({ length: input.repetir }, () => input.mensagem),
       recebidoEm: new Date().toISOString(),
     }),
 });

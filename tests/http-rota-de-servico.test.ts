@@ -183,6 +183,62 @@ test("entrada de rota GET vem dos parâmetros de query", async () => {
   assert.equal(semTermo.status, 400);
 });
 
+test("na query, valor é texto e chave repetida fica só com a última", async () => {
+  // Os dois limites documentados em `ServiceRouteOptions.from`, exercitados para
+  // que a documentação não vire promessa: quem escreve o serviço descobriria
+  // isto em tempo de execução, com um 400 aparentemente inexplicável.
+  const comNumeroCru = defineService({
+    name: "paginar_cru",
+    summary: "Recebe um número sem coerção.",
+    kind: "read",
+    permission: "paginar_cru",
+    input: z.object({ pagina: z.number() }),
+    run: (_session, input) => ok(input),
+  });
+  const rotaCrua = serviceRoute(comNumeroCru, {
+    from: "query",
+    readSession: comSessao(["paginar_cru"]),
+  });
+  const recusado = await rotaCrua(new Request("http://localhost:3000/api/x?pagina=2"));
+  assert.equal(recusado.status, 400, "`z.number()` não aceita o texto da query");
+
+  // O caminho certo é a coerção no schema do PRÓPRIO serviço.
+  const comCoercao = defineService({
+    name: "paginar",
+    summary: "Recebe um número com coerção.",
+    kind: "read",
+    permission: "paginar",
+    input: z.object({ pagina: z.coerce.number().int().min(1) }),
+    run: (_session, input) => ok(input),
+  });
+  const rota = serviceRoute(comCoercao, {
+    from: "query",
+    readSession: comSessao(["paginar"]),
+  });
+  const aceito = await rota(new Request("http://localhost:3000/api/x?pagina=2"));
+  assert.equal(aceito.status, 200);
+  assert.deepEqual(await aceito.json(), { pagina: 2 });
+
+  // Chave repetida: vale a última. Rota que precise de lista escreve o handler à
+  // mão e chama o serviço com o array pronto.
+  const comTexto = defineService({
+    name: "filtrar",
+    summary: "Recebe uma etiqueta.",
+    kind: "read",
+    permission: "filtrar",
+    input: z.object({ tag: z.string() }),
+    run: (_session, input) => ok(input),
+  });
+  const rotaTag = serviceRoute(comTexto, {
+    from: "query",
+    readSession: comSessao(["filtrar"]),
+  });
+  const repetida = await rotaTag(
+    new Request("http://localhost:3000/api/x?tag=a&tag=b"),
+  );
+  assert.deepEqual(await repetida.json(), { tag: "b" });
+});
+
 test("a mesma entrada pela rota e pela tool produz o mesmo efeito", async () => {
   // O teste que dá sentido às três portas. Se um dia a rota ganhar um default
   // próprio, um limite próprio ou uma normalização própria, é aqui que aparece.
