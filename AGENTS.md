@@ -160,6 +160,31 @@ direto, no mesmo processo, e mostra o que veio; um componente de cliente chama a
 rota de API, e a rota chama o mesmo serviço. `app/painel/page.tsx` é o exemplo
 pronto.
 
+**A rota de API é o serviço mais uma linha:**
+
+```ts
+// app/api/avisos/route.ts
+import { serviceRoute } from "@/lib/http/service-route";
+import { publicarAviso } from "@/lib/services/avisos";
+
+export const dynamic = "force-dynamic";
+export const POST = serviceRoute(publicarAviso, { from: "json" });
+```
+
+`from: "json"` lê o corpo; `from: "query"` lê os parâmetros de query (`GET`). O
+schema da entrada é o **do serviço** — não escreva um segundo aqui, porque dois
+schemas divergem. A tradução de falha para status HTTP também é uma só
+(`lib/http/service-route.ts`): sem sessão vira 401, sem permissão 403, entrada
+inválida 400 com os campos, não encontrado 404, conflito 409, falha interna 500
+sem detalhe de infraestrutura.
+
+Precisa de algo que o adaptador não cobre — parâmetro de caminho, cabeçalho,
+upload? Escreva o handler à mão, chame o serviço e devolva
+`serviceResponse(resultado)`. O que **não** se faz é conferir permissão na rota:
+quem responde "esta pessoa pode?" é o serviço, e é a mesma resposta que a tela
+usa. `app/api/echo/route.ts` (sem permissão) e `app/api/diagnostico/route.ts`
+(protegida) são os dois exemplos prontos.
+
 **Por que a decisão não mora na página nem na rota.** Porque a mesma decisão é
 alcançada por mais de uma porta, e regra escrita duas vezes diverge na terceira
 mudança — sem dar erro, só respondendo diferente em cada porta para a mesma
@@ -205,7 +230,9 @@ exigir uma fonte específica, é decisão do usuário, não default.
 
 ## Regras que não se negociam
 
-**Toda rota de API valida a entrada.** Use `parseJsonBody`/`parseSearchParams`
+**Toda rota de API valida a entrada.** Numa rota sobre serviço isso vem de
+graça: quem valida é o schema do serviço, e `serviceRoute` traduz a recusa em 400
+com os campos. Num handler escrito à mão, use `parseJsonBody`/`parseSearchParams`
 de `lib/validation.ts`. Dado que vem do cliente é `unknown` até ser validado —
 `as` não valida nada, só silencia o compilador.
 

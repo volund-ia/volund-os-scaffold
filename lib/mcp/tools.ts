@@ -40,6 +40,7 @@
 import type { z } from "zod";
 
 import type { Session } from "../auth/session";
+import { ecoar } from "../services/eco";
 import { getService } from "../services/index";
 import { verDiagnostico, verPerfil } from "../services/painel";
 import {
@@ -235,6 +236,12 @@ export const TOOLS: Readonly<Record<string, Tool>> = registerTools([
     description:
       "Mostra os detalhes técnicos da instalação deste App (identificadores e se o banco está configurado). Exige permissão; use quando precisar conferir o ambiente antes de investigar um problema.",
     service: verDiagnostico,
+  }),
+  defineTool({
+    name: "ecoar",
+    description:
+      "Repete de volta a mensagem que você mandar, até cinco vezes. Serve para conferir que a conexão com este App está funcionando antes de tentar algo que muda dado.",
+    service: ecoar,
   }),
 ]);
 
