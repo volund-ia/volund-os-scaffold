@@ -1,6 +1,7 @@
 {
   "$comment": "Contrato dos claims do ACCESS token entre o provedor (volund-os) e o scaffold dos Apps (volund-os-scaffold). Versionado IDÊNTICO nos dois repositórios; a coordenação é o número de contrato do scaffold, que a plataforma já recusa quando não suporta. Ver contracts/README.md.",
-  "contract": 2,
+  "$comment_v3": "O contrato 3 (camada de serviço, rota de API e endpoint MCP) NÃO mudou nenhum claim: a superfície programática autentica com o MESMO access token da sessão web, verificado do mesmo jeito. O número subiu porque ele é o do scaffold, e é essa igualdade que o teste vigia nos dois lados. Os claims de identidade de agente (subject_type, act) entram DENTRO do contrato 3, na fase de consumo por agentes.",
+  "contract": 3,
   "accessToken": {
     "always": [
       "iss",
