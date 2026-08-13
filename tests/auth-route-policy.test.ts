@@ -56,6 +56,10 @@ test("a lista pública é curta e enumerada", () => {
   // teste vermelho, não passar despercebido numa revisão.
   assert.deepEqual([...PUBLIC_ROUTES].sort(), [
     "/",
+    // Contrato 4: a introspecção da superfície. Dispensa o portão de COOKIE
+    // porque quem chama é a plataforma, servidor a servidor; o portão dela é a
+    // assinatura HMAC conferida na própria rota. Ver o teste logo abaixo.
+    "/api/_volund/surface",
     "/api/auth/callback",
     "/api/auth/login",
     "/api/mcp",
