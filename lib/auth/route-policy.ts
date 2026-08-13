@@ -53,6 +53,17 @@ export const PUBLIC_ROUTES: readonly string[] = [
   // serviço. Enumerar esta rota aqui troca UM portão por outro — não remove
   // nenhum.
   "/api/mcp",
+  // Introspecção da superfície (contrato 4). Público **para o portão de
+  // cookie**, e não para o mundo: quem chama é a PLATAFORMA, servidor a
+  // servidor, e não tem cookie nenhum.
+  //
+  // O portão continua existindo e é a ASSINATURA: a rota confere um HMAC sobre
+  // o caminho e o instante, feito com o segredo que as duas pontas já
+  // compartilham (`app/api/_volund/surface/route.ts`). Sem ela, 401. Nenhum
+  // agente e nenhuma pessoa passam por aqui — é o único caminho que devolve a
+  // lista de tools SEM o filtro de `can()`, e é por isso que ele não é para
+  // gente.
+  "/api/_volund/surface",
   // Asset que a vitrine precisa mostrar a quem ainda não entrou vem aqui, um
   // por linha e com o motivo ao lado. Exemplo:
   //   "/imagens/capa.png",  // ilustração da vitrine
