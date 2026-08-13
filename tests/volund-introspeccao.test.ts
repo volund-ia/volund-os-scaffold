@@ -98,7 +98,7 @@ test("a rota devolve a lista INTEIRA, sem filtro de `can()`", async () => {
   // justamente a tool exigindo chave fora do catálogo.
   const { TOOLS } = await import("../lib/mcp/tools");
   const fonte = await import("node:fs").then((fs) =>
-    fs.readFileSync("app/api/_volund/surface/route.ts", "utf8"),
+    fs.readFileSync("app/api/%5Fvolund/surface/route.ts", "utf8"),
   );
 
   // O IMPORT, e não a palavra: o cabeçalho da rota explica por que ela NÃO usa
@@ -122,7 +122,46 @@ test("`endpoints` sai como `null`, e não como lista vazia", async () => {
   // falhar que a verificação existe para evitar. `null` diz "não introspecto
   // isto", e a plataforma pula essa metade.
   const fonte = await import("node:fs").then((fs) =>
-    fs.readFileSync("app/api/_volund/surface/route.ts", "utf8"),
+    fs.readFileSync("app/api/%5Fvolund/surface/route.ts", "utf8"),
   );
   assert.match(fonte, /endpoints: null/);
+});
+
+test("a rota EXISTE na tabela de rotas do build, e não só como arquivo", async () => {
+  // O defeito que chegou à release v4.0.0: o arquivo estava em
+  // `app/api/%5Fvolund/surface/route.ts`, e o Next trata pasta iniciada por `_`
+  // como PRIVADA — ela não vira rota. A rota respondia 404 em produção com o
+  // arquivo presente no repositório, e nada aqui percebia: os testes olhavam o
+  // TEXTO do arquivo e a allow-list, nunca se ele era roteável.
+  //
+  // A pasta agora é `%5Fvolund`, o escape documentado do Next: o segmento sai
+  // literalmente como `_volund`, então a URL não muda e a plataforma não precisa
+  // saber disso.
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const dir = "app/api/%5Fvolund/surface";
+  assert.ok(
+    fs.existsSync(path.join(dir, "route.ts")),
+    `a rota precisa morar em ${dir} — pasta com \`_\` cru é privada e não roteia`,
+  );
+  assert.ok(
+    !fs.existsSync("app/api/_volund"),
+    "a pasta com `_` cru não pode voltar: ela existiria como arquivo e não como rota",
+  );
+
+  // E o manifesto do build é a prova de que ela ROTEIA. Sem build, o teste diz
+  // isso em voz alta em vez de passar por omissão.
+  const manifesto = ".next/server/app-paths-manifest.json";
+  if (!fs.existsSync(manifesto)) {
+    assert.fail(
+      `sem ${manifesto}: rode \`npm run build\` antes deste teste — ` +
+        "é o manifesto que prova que a rota existe, e não o arquivo no disco",
+    );
+  }
+  const rotas = Object.keys(JSON.parse(fs.readFileSync(manifesto, "utf8")));
+  assert.ok(
+    rotas.some((r) => r.startsWith("/api/_volund/surface")),
+    `a rota não está no manifesto do build. Presentes: ${rotas.join(", ")}`,
+  );
 });
