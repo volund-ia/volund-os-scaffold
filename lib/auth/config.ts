@@ -19,6 +19,23 @@ export const AUTH_LOGIN_PATH = "/api/auth/login";
 /** Encerramento. NÃO é público: sem sessão não há o que encerrar. */
 export const AUTH_LOGOUT_PATH = "/api/auth/logout";
 
+/** O endpoint MCP deste App. É ele o "recurso" que o metadado abaixo descreve. */
+export const MCP_PATH = "/api/mcp";
+
+/**
+ * Onde este App descreve a si mesmo como recurso protegido (RFC 9728).
+ *
+ * É o começo do fluxo padrão de autorização do MCP: o cliente bate no endpoint,
+ * toma 401, lê o `resource_metadata` do `WWW-Authenticate`, busca este documento
+ * e descobre por ele qual é o servidor de autorização. Sem este caminho — ou com
+ * ele atrás do portão de cookie — o cliente não descobre nada, e o erro que ele
+ * mostra fala do App em vez da descoberta.
+ *
+ * Fixo por contrato, como os caminhos de autenticação acima: quem o define é a
+ * spec, não nós.
+ */
+export const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
+
 /** Cookie da sessão selada. */
 export const SESSION_COOKIE = "volund_session";
 

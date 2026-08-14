@@ -56,6 +56,13 @@ test("a lista pública é curta e enumerada", () => {
   // teste vermelho, não passar despercebido numa revisão.
   assert.deepEqual([...PUBLIC_ROUTES].sort(), [
     "/",
+    // Contrato 5: o metadado de recurso protegido (RFC 9728). É o único desta
+    // lista que é público DE VERDADE, e não "público para o portão de cookie":
+    // ele é lido antes de existir qualquer token, a spec de autorização do MCP
+    // manda o cliente buscá-lo sem credencial, e não há nada a proteger nele —
+    // são o endereço do endpoint MCP e o do provedor, ambos já conhecidos por
+    // quem tem o link do App.
+    "/.well-known/oauth-protected-resource",
     // Contrato 4: a introspecção da superfície. Dispensa o portão de COOKIE
     // porque quem chama é a plataforma, servidor a servidor; o portão dela é a
     // assinatura HMAC conferida na própria rota. Ver o teste logo abaixo.

@@ -31,7 +31,11 @@
  * responde 401 para quem pede `image/*`). Não é falha silenciosa.
  */
 
-import { AUTH_CALLBACK_PATH, AUTH_LOGIN_PATH } from "./config";
+import {
+  AUTH_CALLBACK_PATH,
+  AUTH_LOGIN_PATH,
+  PROTECTED_RESOURCE_METADATA_PATH,
+} from "./config";
 
 export const PUBLIC_ROUTES: readonly string[] = [
   // Vitrine. Existe para que o endereço publicado abra para qualquer visitante
@@ -64,6 +68,18 @@ export const PUBLIC_ROUTES: readonly string[] = [
   // lista de tools SEM o filtro de `can()`, e é por isso que ele não é para
   // gente.
   "/api/_volund/surface",
+  // Metadado de descoberta (RFC 9728). Público porque é lido ANTES de existir
+  // qualquer token — é a definição de metadado de descoberta, e a spec de
+  // autorização do MCP manda o cliente buscá-lo sem credencial.
+  //
+  // Aqui não há "um portão trocado por outro", como nas duas rotas acima: este
+  // documento é público de verdade. E não há nada a proteger nele — são o
+  // endereço do endpoint MCP e o do servidor de autorização, os dois já
+  // conhecidos por qualquer um que tenha o link do App.
+  //
+  // O caminho é o PÚBLICO, e não o do handler (`/api/oauth-protected-resource`):
+  // o proxy vê o caminho antes do rewrite.
+  PROTECTED_RESOURCE_METADATA_PATH,
   // Asset que a vitrine precisa mostrar a quem ainda não entrou vem aqui, um
   // por linha e com o motivo ao lado. Exemplo:
   //   "/imagens/capa.png",  // ilustração da vitrine

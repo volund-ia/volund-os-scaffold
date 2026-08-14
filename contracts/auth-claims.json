@@ -2,7 +2,8 @@
   "$comment_v4": "O contrato 4 NAO muda claim nenhum: ele acrescenta ao artefato a rota GET /api/_volund/surface, que a plataforma usa para conferir a superficie declarada contra a real. Ela se autentica por assinatura HMAC sobre o VOLUND_OIDC_CLIENT_SECRET, fora do caminho de token. O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
   "$comment": "Contrato dos claims do ACCESS token entre o provedor (volund-os) e o scaffold dos Apps (volund-os-scaffold). Versionado IDÊNTICO nos dois repositórios; a coordenação é o número de contrato do scaffold, que a plataforma já recusa quando não suporta. Ver contracts/README.md.",
   "$comment_v3": "O contrato 3 (camada de serviço, rota de API e endpoint MCP) NÃO mudou nenhum claim: a superfície programática autentica com o MESMO access token da sessão web, verificado do mesmo jeito. O número subiu porque ele é o do scaffold, e é essa igualdade que o teste vigia nos dois lados. Os claims de identidade de agente (subject_type, act) entram DENTRO do contrato 3, na fase de consumo por agentes.",
-  "contract": 4,
+  "$comment_v5": "O contrato 5 NAO muda claim nenhum: ele acrescenta a DESCOBERTA que o fluxo padrao de autorizacao do MCP exige — o parametro `resource_metadata` no `WWW-Authenticate` da recusa e a rota publica GET /.well-known/oauth-protected-resource (RFC 9728), que aponta o servidor de autorizacao. O token continua sendo o MESMO access token da sessao web, verificado do mesmo jeito. O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
+  "contract": 5,
   "accessToken": {
     "always": [
       "iss",
