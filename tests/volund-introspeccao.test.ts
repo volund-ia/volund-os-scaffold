@@ -150,8 +150,9 @@ test("a rota EXISTE na tabela de rotas do build, e não só como arquivo", async
     "a pasta com `_` cru não pode voltar: ela existiria como arquivo e não como rota",
   );
 
-  // E o manifesto do build é a prova de que ela ROTEIA. Sem build, o teste diz
-  // isso em voz alta em vez de passar por omissão.
+  // E o manifesto do build é a prova de que ela ROTEIA. `npm run check` roda o
+  // build ANTES dos testes justamente por isto: a garantia de roteamento é uma
+  // propriedade do build, então o comando que a vigia precisa produzi-lo.
   const manifesto = ".next/server/app-paths-manifest.json";
   if (!fs.existsSync(manifesto)) {
     assert.fail(
@@ -159,6 +160,18 @@ test("a rota EXISTE na tabela de rotas do build, e não só como arquivo", async
         "é o manifesto que prova que a rota existe, e não o arquivo no disco",
     );
   }
+
+  // Manifesto OBSOLETO é pior que ausente: ele passa, e o verde não diz nada
+  // sobre o código atual. Se a rota é mais nova que o build, o build não a viu.
+  // Apontado pelo CodeRabbit na revisão do #18.
+  const rotaMtime = fs.statSync(path.join(dir, "route.ts")).mtimeMs;
+  const manifestoMtime = fs.statSync(manifesto).mtimeMs;
+  assert.ok(
+    manifestoMtime >= rotaMtime,
+    `o build é mais antigo que a rota (${new Date(manifestoMtime).toISOString()} < ` +
+      `${new Date(rotaMtime).toISOString()}): rode \`npm run build\` de novo — ` +
+      "um manifesto obsoleto passaria sem dizer nada sobre o código de agora",
+  );
   const rotas = Object.keys(JSON.parse(fs.readFileSync(manifesto, "utf8")));
   assert.ok(
     rotas.some((r) => r.startsWith("/api/_volund/surface")),
