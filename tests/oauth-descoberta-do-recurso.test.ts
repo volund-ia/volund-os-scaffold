@@ -147,10 +147,23 @@ test("a rota EXISTE na tabela de rotas do build, e não só como arquivo", async
     `a rota precisa morar em ${dir}`,
   );
 
-  const config = fs.readFileSync("next.config.ts", "utf8");
+  // O rewrite EXECUTADO, e o par vindo do MESMO objeto. Procurar o caminho como
+  // substring do arquivo passa com o destino trocado, e passa até se ele sobrar
+  // só num comentário — casos em que a rota continua no manifesto e o endereço
+  // público morre mesmo assim.
+  const { default: nextConfig } = await import("../next.config");
+  const reescritas = await nextConfig.rewrites!();
+  const regras = Array.isArray(reescritas) ? reescritas : (reescritas.afterFiles ?? []);
+  const regra = regras.find((r) => r.source === PROTECTED_RESOURCE_METADATA_PATH);
   assert.ok(
-    config.includes(PROTECTED_RESOURCE_METADATA_PATH),
+    regra,
     "sem o rewrite, o handler existe sem endereço público e a descoberta não acha nada",
+  );
+  assert.equal(
+    regra.destination,
+    `/${dir.replace(/^app\//, "")}`,
+    `o rewrite de ${PROTECTED_RESOURCE_METADATA_PATH} tem de apontar para o handler ` +
+      "que o manifesto confere logo abaixo",
   );
 
   const manifesto = ".next/server/app-paths-manifest.json";
