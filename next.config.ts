@@ -1,6 +1,23 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /**
+   * O metadado de recurso protegido (RFC 9728) no caminho que a spec define.
+   *
+   * O handler mora em `app/api/oauth-protected-resource` porque pasta iniciada
+   * por ponto dependeria de o scanner de rotas do Next não a ignorar — a mesma
+   * aposta que já custou uma release quando `_volund` virou pasta privada. O
+   * rewrite fixa o caminho público de forma determinística.
+   */
+  async rewrites() {
+    return [
+      {
+        source: "/.well-known/oauth-protected-resource",
+        destination: "/api/oauth-protected-resource",
+      },
+    ];
+  },
+
   // O app roda em modo de desenvolvimento DENTRO do sandbox e é exibido ao
   // usuário num iframe servido pelo proxy do ambiente (`<porta>-<id>.e2b.app`).
   //

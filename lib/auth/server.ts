@@ -20,6 +20,7 @@ import { redirect } from "next/navigation";
 
 import {
   AUTH_LOGIN_PATH,
+  PROTECTED_RESOURCE_METADATA_PATH,
   SESSION_COOKIE,
   readAuthConfig,
   type AuthConfig,
@@ -73,11 +74,32 @@ export async function getSession(): Promise<Session | null> {
 export type BearerGate =
   { ok: true; session: Session } | { ok: false; response: Response };
 
-function recusaBearer(status: 401 | 503, erro: string): BearerGate {
+/**
+ * O `WWW-Authenticate` de uma recusa, com o ponteiro para a descoberta.
+ *
+ * O `resource_metadata` é o que transforma "você falhou" em "você falhou, e é
+ * ALI que se descobre como não falhar". É ele que a spec de autorização do MCP
+ * manda o cliente ler para achar o servidor de autorização (RFC 9728 §5.1) — sem
+ * o parâmetro, um cliente que não conhece o VolundOS não tem por onde começar, e
+ * o erro que ele mostra fala do App em vez da descoberta.
+ *
+ * A origem sai da REQUISIÇÃO, e não de configuração: o mesmo App responde em
+ * produção, na pré-visualização e no ambiente ao vivo, e um endereço fixo
+ * apontaria o cliente para fora de onde ele estava falando.
+ */
+function desafioBearer(request: Request): string {
+  const origem = new URL(request.url).origin;
+  return (
+    `Bearer realm="volund", error="invalid_token", ` +
+    `resource_metadata="${origem}${PROTECTED_RESOURCE_METADATA_PATH}"`
+  );
+}
+
+function recusaBearer(request: Request, status: 401 | 503, erro: string): BearerGate {
   const headers: Record<string, string> = { "cache-control": "no-store" };
   if (status === 401) {
     // Diz ao cliente MCP COMO se autenticar, e não só que ele falhou.
-    headers["www-authenticate"] = 'Bearer realm="volund", error="invalid_token"';
+    headers["www-authenticate"] = desafioBearer(request);
   }
   return { ok: false, response: Response.json({ error: erro }, { status, headers }) };
 }
@@ -91,13 +113,13 @@ export async function bearerGate(request: Request): Promise<BearerGate> {
     // nossa, e o proxy responde 503 pelo mesmo motivo — nunca degradar para
     // acesso aberto, nunca culpar o token de quem chamou.
     console.error("[auth] MCP sem configuração de autenticação:", err);
-    return recusaBearer(503, "autenticação não configurada");
+    return recusaBearer(request, 503, "autenticação não configurada");
   }
 
   const header = request.headers.get("authorization") ?? "";
   const [esquema, token] = header.split(" ");
   if (esquema?.toLowerCase() !== "bearer" || !token) {
-    return recusaBearer(401, "não autenticado");
+    return recusaBearer(request, 401, "não autenticado");
   }
 
   let session: Session | null;
@@ -108,10 +130,10 @@ export async function bearerGate(request: Request): Promise<BearerGate> {
     // para o cache velho quando existe, e lança quando não existe. Deixar a
     // exceção subir daqui viraria erro não tratado no handler do MCP.
     console.error("[auth] não foi possível verificar o token do MCP:", err);
-    return recusaBearer(503, "não foi possível verificar a autenticação");
+    return recusaBearer(request, 503, "não foi possível verificar a autenticação");
   }
 
-  if (!session) return recusaBearer(401, "não autenticado");
+  if (!session) return recusaBearer(request, 401, "não autenticado");
   return { ok: true, session };
 }
 
