@@ -18,8 +18,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const raiz = path.join(import.meta.dirname, "..");
+/**
+ * O diretório deste arquivo, derivado da URL do módulo.
+ *
+ * `aquiDir` só existe a partir do Node 20.11, e o `.nvmrc` fixa
+ * 20.9.0 — nele o valor é `undefined` e o `path.join` estoura. Isso nunca
+ * apareceu porque o CI rodava ZERO testes (o glob padrão do Node 20 não casa
+ * `tests/*.test.ts`); quando ele passou a rodá-los, cinco arquivos quebraram
+ * de uma vez. Esta forma funciona em qualquer versão.
+ */
+const aquiDir = path.dirname(fileURLToPath(import.meta.url));
+
+const raiz = path.join(aquiDir, "..");
 const ler = (rel: string) => readFileSync(path.join(raiz, rel), "utf8");
 
 /** Os dois lugares que o agente lê antes de decidir como restringir uma ação. */

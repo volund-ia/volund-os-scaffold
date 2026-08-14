@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
@@ -27,6 +28,17 @@ import { defineTool, getTool, registerTools, TOOL_MARK, TOOLS } from "../lib/mcp
 import { defineService } from "../lib/services/define";
 import { getService } from "../lib/services/index";
 import { ok } from "../lib/services/types";
+
+/**
+ * O diretório deste arquivo, derivado da URL do módulo.
+ *
+ * `aquiDir` só existe a partir do Node 20.11, e o `.nvmrc` fixa
+ * 20.9.0 — nele o valor é `undefined` e o `path.join` estoura. Isso nunca
+ * apareceu porque o CI rodava ZERO testes (o glob padrão do Node 20 não casa
+ * `tests/*.test.ts`); quando ele passou a rodá-los, cinco arquivos quebraram
+ * de uma vez. Esta forma funciona em qualquer versão.
+ */
+const aquiDir = path.dirname(fileURLToPath(import.meta.url));
 
 function sessao(permissoes: string[] = []): Session {
   return {
@@ -364,7 +376,7 @@ test("getTool só devolve tool registrada, nunca herdada", () => {
 test("o registro de tools não reimplementa regra", () => {
   // O anti-padrão em forma de teste: banco e permissão não se tocam aqui. Quem
   // consulta o banco e quem confere `can()` é o serviço — a tool só chama.
-  const pasta = path.join(import.meta.dirname, "..", "lib", "mcp");
+  const pasta = path.join(aquiDir, "..", "lib", "mcp");
   const proibidos: [RegExp, string][] = [
     [/from\s+['"]\.\.\/db['"]/, "consultar o banco aqui é reimplementar o serviço"],
     [/\bquery\(/, "consultar o banco aqui é reimplementar o serviço"],
