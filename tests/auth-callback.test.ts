@@ -13,6 +13,7 @@ const AMBIENTE = {
   VOLUND_OIDC_ISSUER: "https://provedor.exemplo.test",
   VOLUND_OIDC_CLIENT_ID: "client-de-teste",
   VOLUND_OIDC_CLIENT_SECRET: "segredo-de-teste",
+  VOLUND_APP_ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
 };
 
 /**
@@ -74,6 +75,7 @@ test("state divergente é recusado, mesmo com aperto de mão válido", async () 
     issuer: AMBIENTE.VOLUND_OIDC_ISSUER,
     clientId: AMBIENTE.VOLUND_OIDC_CLIENT_ID,
     clientSecret: AMBIENTE.VOLUND_OIDC_CLIENT_SECRET,
+    appId: AMBIENTE.VOLUND_APP_ID,
   };
   const selado = await sealHandshake(
     {

@@ -59,6 +59,7 @@ const config: AuthConfig = {
   issuer: ISSUER,
   clientId: "client-a",
   clientSecret: "segredo-do-app-a",
+  appId: APP_ID,
 };
 
 let privateKey: CryptoKey;
@@ -130,6 +131,7 @@ before(async () => {
   process.env.VOLUND_OIDC_ISSUER = ISSUER;
   process.env.VOLUND_OIDC_CLIENT_ID = config.clientId;
   process.env.VOLUND_OIDC_CLIENT_SECRET = config.clientSecret;
+  process.env.VOLUND_APP_ID = config.appId;
 
   const par = await crypto.subtle.generateKey(
     {

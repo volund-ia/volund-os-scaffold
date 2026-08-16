@@ -23,11 +23,12 @@ const ORIGEM = "https://app-de-teste.example.com";
 /** O `WWW-Authenticate` que o portão emite, sem subir servidor. */
 async function desafioDe(url: string): Promise<string | null> {
   // Sem env de autenticação o portão devolve 503 — que não carrega o desafio.
-  // Estas três variáveis não precisam ser reais: o teste para antes de verificar
+  // Estas variáveis não precisam ser reais: o teste para antes de verificar
   // token nenhum, na ausência do cabeçalho.
   process.env.VOLUND_OIDC_ISSUER ??= "https://os.volund.com.br";
   process.env.VOLUND_OIDC_CLIENT_ID ??= "volund_app_teste";
   process.env.VOLUND_OIDC_CLIENT_SECRET ??= "segredo-de-teste";
+  process.env.VOLUND_APP_ID ??= "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
   const { bearerGate } = await import("../lib/auth/server");
   const gate = await bearerGate(new Request(url));
@@ -90,6 +91,7 @@ test("o documento descreve ESTE recurso e aponta o provedor", async () => {
   process.env.VOLUND_OIDC_ISSUER = "https://os.volund.com.br";
   process.env.VOLUND_OIDC_CLIENT_ID ??= "volund_app_teste";
   process.env.VOLUND_OIDC_CLIENT_SECRET ??= "segredo-de-teste";
+  process.env.VOLUND_APP_ID ??= "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
   const { GET } = await import("../app/api/oauth-protected-resource/route");
   const res = await GET(new Request(`${ORIGEM}${PROTECTED_RESOURCE_METADATA_PATH}`));

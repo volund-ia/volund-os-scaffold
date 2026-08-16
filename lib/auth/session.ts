@@ -98,13 +98,13 @@ export async function sealSession(
 
 /**
  * Abre o cookie e **verifica o access token de verdade** — assinatura, emissor,
- * validade, `azp` e `aud`.
+ * validade, `app_id` e `aud`.
  *
  * Confiar no selo do cookie sozinho seria confiar no que este App escreveu no
  * passado; verificar o token é o que faz a identidade continuar vindo do
  * provedor a cada requisição. É também onde a recusa acontece: um token de
  * outro App, mesmo assinado pela mesma chave e selado com um segredo roubado,
- * não passa por `azp`.
+ * tem outra audiência.
  */
 export async function readSession(
   sealed: string | undefined | null,
@@ -121,7 +121,7 @@ export async function readSession(
   const result = await verifyAccessToken(payload.accessToken, {
     keys,
     issuer: config.issuer,
-    clientId: config.clientId,
+    appId: config.appId,
   });
   if (!result.ok) return null;
 
@@ -154,10 +154,15 @@ function sessionFromClaims(claims: TokenClaims, accessToken: string): Session {
  * Sessão a partir de um access token apresentado no cabeçalho — o caminho do MCP.
  *
  * É a **mesma** verificação da sessão web: mesmo JWKS, mesmo emissor, mesma
- * audiência (`volund:app:<appAgentId>`), mesmo `azp`, mesmo mapeamento de claims.
- * O que muda é só de onde o token veio — cookie selado numa ponta, cabeçalho na
- * outra. Não há população de identidade própria para o MCP, não há chave por App:
- * o `Session` que chega ao serviço é indistinguível do que chega pela tela.
+ * audiência (`volund:app:<appAgentId>`), mesmo mapeamento de claims. O que muda
+ * é só de onde o token veio — cookie selado numa ponta, cabeçalho na outra. Não
+ * há população de identidade própria para o MCP, não há chave por App: o
+ * `Session` que chega ao serviço é indistinguível do que chega pela tela.
+ *
+ * O que MUDA entre as duas portas é quem obteve o token: pela tela é sempre o
+ * client deste App; pelo cabeçalho pode ser um cliente de MCP que se registrou
+ * sozinho no provedor. Por isso a verificação não olha o `azp` — ver
+ * `verifyAccessToken`.
  */
 export async function readSessionFromAccessToken(
   accessToken: string | undefined | null,
@@ -169,7 +174,7 @@ export async function readSessionFromAccessToken(
   const result = await verifyAccessToken(accessToken, {
     keys,
     issuer: config.issuer,
-    clientId: config.clientId,
+    appId: config.appId,
   });
   if (!result.ok) return null;
 
@@ -320,7 +325,7 @@ export async function exchangeCode(params: {
   const accessResult = await verifyAccessToken(data.access_token as string, {
     keys,
     issuer: config.issuer,
-    clientId: config.clientId,
+    appId: config.appId,
   });
   if (!accessResult.ok)
     throw new Error(`access token recusado: ${accessResult.reason}`);

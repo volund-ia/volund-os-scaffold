@@ -183,34 +183,50 @@ export async function verifyIdToken(
  * Access token — quem valida é o **recurso**, então `aud` é o `resource_id`
  * daquele App, e `azp` é o client que o obteve.
  *
- * ## As duas conferências, e por que são duas
+ * ## A conferência é sobre a AUDIÊNCIA, e a referência vem de fora do token
  *
- * `azp === client_id` é a amarra ao **nosso** App: o token de outro App carrega
- * o `client_id` dele, e é isto que faz a recusa acontecer. `aud` conferido
- * contra a forma canônica derivada do `app_id` do próprio token é a checagem de
- * coerência: um token cuja audiência não corresponde ao App que ele diz ser está
- * malformado, mesmo que assinado.
+ * `app_id` e `aud` são conferidos contra o `appId` que a plataforma injetou em
+ * `VOLUND_APP_ID` — não contra outro campo do mesmo token. É o que separa este
+ * App dos demais: o JWKS é compartilhado por toda a plataforma, então a
+ * assinatura sozinha não distingue nada, e a audiência canônica distingue.
  *
- * Nenhuma das duas sozinha basta. Só `aud` deixaria passar qualquer token cujo
- * `app_id` fosse escolhido pelo emissor do pedido; só `azp` aceitaria um token
- * cuja audiência aponta para outro recurso.
+ * ## Por que o `azp` NÃO é conferido (e por que já foi)
+ *
+ * Até o contrato 5 esta função exigia `azp === client_id`, isto é, que o token
+ * tivesse sido obtido pelo client do PRÓPRIO App. Aquilo amarrava o token a nós
+ * de um jeito que parecia mais forte e era mais frouxo: a audiência era
+ * conferida contra o `app_id` do mesmo token, dois campos coerentes por
+ * construção, então quem de fato separava um App do outro era o `azp` — e
+ * separava pela razão errada.
+ *
+ * O preço apareceu inteiro no dia em que um cliente de MCP se registrou sozinho
+ * (RFC 7591) e pediu um token para este App: o provedor emitiu, com `aud` deste
+ * App e o consentimento da pessoa, e a resposta daqui foi **401**. Nenhum
+ * cliente de fora consegue apresentar o nosso `client_id` no `azp`, e é
+ * justamente cliente de fora que a spec de autorização do MCP existe para
+ * atender.
+ *
+ * Quem obteve o token é assunto de quem AUTORIZOU — a pessoa, na tela de
+ * consentimento do provedor. O recurso confere para quem o token vale. O `azp`
+ * continua vindo no token e continua útil: é a trilha de por qual cliente aquele
+ * acesso entrou.
  */
 export async function verifyAccessToken(
   token: string,
-  params: { keys: PublicJwk[]; issuer: string; clientId: string; now?: number },
+  params: { keys: PublicJwk[]; issuer: string; appId: string; now?: number },
 ): Promise<VerifyResult> {
   const result = await verifySignedToken(token, params);
   if (!result.ok) return result;
 
   const { claims } = result;
-  if (claims.azp !== params.clientId) {
-    return { ok: false, reason: "access token obtido por outro client" };
-  }
   if (!claims.app_id) {
     return { ok: false, reason: "access token sem `app_id`" };
   }
-  if (claims.aud !== resourceIdForApp(claims.app_id)) {
-    return { ok: false, reason: "audiência não corresponde ao App do token" };
+  if (claims.app_id !== params.appId) {
+    return { ok: false, reason: "access token é de outro App" };
+  }
+  if (claims.aud !== resourceIdForApp(params.appId)) {
+    return { ok: false, reason: "audiência não é a deste App" };
   }
   return result;
 }

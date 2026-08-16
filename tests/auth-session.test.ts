@@ -28,11 +28,13 @@ const configA: AuthConfig = {
   issuer: ISSUER,
   clientId: "client-a",
   clientSecret: "segredo-do-app-a",
+  appId: APP_A,
 };
 const configB: AuthConfig = {
   issuer: ISSUER,
   clientId: "client-b",
   clientSecret: "segredo-do-app-b",
+  appId: APP_B,
 };
 
 let privateKey: CryptoKey;
