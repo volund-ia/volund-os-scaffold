@@ -69,6 +69,16 @@ export interface AuthConfig {
   clientId: string;
   /** **Exclusivo do servidor.** Nunca prefixe com `NEXT_PUBLIC_`, nunca logue. */
   clientSecret: string;
+  /**
+   * Quem é ESTE App, como recurso (contrato 6).
+   *
+   * Não é segredo — é o mesmo id que viaja no claim `app_id` de todo token. O
+   * que ele tem de especial é vir de **fora do token**: é sobre ele que a
+   * audiência do access token é conferida, e sem ele a conferência só podia ser
+   * feita contra o próprio token, o que não separa nada. Ver `verifyAccessToken`
+   * em `./jwt.ts`.
+   */
+  appId: string;
 }
 
 /**
@@ -133,6 +143,10 @@ export function readAuthConfig(
     issuer: issuerUrl.origin,
     clientId: required(env, "VOLUND_OIDC_CLIENT_ID"),
     clientSecret: required(env, "VOLUND_OIDC_CLIENT_SECRET"),
+    // Obrigatória como as outras, e pela mesma razão: sem ela não há como
+    // conferir a audiência do token, e a alternativa seria conferi-la contra o
+    // próprio token — que é o que não separava um App do outro.
+    appId: required(env, "VOLUND_APP_ID"),
   };
 }
 

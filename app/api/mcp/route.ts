@@ -18,10 +18,15 @@ import { TOOLS } from "@/lib/mcp/tools";
  *
  * Quem chama apresenta `Authorization: Bearer <access token>`, e é **o mesmo
  * token** que o navegador da pessoa apresentaria: mesma verificação (emissor,
- * audiência `volund:app:<appAgentId>`, `azp`), mesmo mapeamento de claims, mesma
+ * audiência `volund:app:<appAgentId>`), mesmo mapeamento de claims, mesma
  * `Session`. Não existe chave por App, não existe conta de serviço, não existe
  * população de identidade paralela. Revogar o acesso de alguém revoga também o
  * MCP dele, porque não há um segundo lugar para lembrar de cortar.
+ *
+ * O que o token NÃO precisa ser é "obtido por este App": um cliente de MCP se
+ * registra sozinho no provedor (RFC 7591) e obtém o token com o consentimento da
+ * pessoa. Quem autoriza é ela; o que este endpoint confere é para QUEM o token
+ * vale — ver `verifyAccessToken` em `lib/auth/jwt.ts`.
  *
  * ## Esta rota é enumerada como pública em `lib/auth/route-policy.ts`
  *

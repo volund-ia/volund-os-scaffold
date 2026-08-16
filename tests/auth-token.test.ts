@@ -83,35 +83,74 @@ test("access token do próprio App é aceito", async () => {
   const r = await verifyAccessToken(token, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
   assert.equal(r.ok, true);
 });
 
 test("App B RECUSA um access token legítimo do App A", async () => {
-  // Mesma chave, mesma assinatura, emissor certo, dentro da validade. O que
-  // difere é `azp`/`aud` — sem essas duas conferências, isto entraria como
+  // O caso que dá nome ao arquivo. Mesma chave, mesma assinatura, emissor certo,
+  // dentro da validade — e o que separa os dois é a AUDIÊNCIA, conferida contra
+  // o `VOLUND_APP_ID` de quem verifica. Sem essa conferência isto entraria como
   // sessão válida no App B.
   const token = await accessTokenDe(APP_A, CLIENT_A);
   const r = await verifyAccessToken(token, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_B,
+    appId: APP_B,
   });
   assert.equal(r.ok, false);
-  assert.match(r.ok === false ? r.reason : "", /outro client/);
+  assert.match(r.ok === false ? r.reason : "", /outro App/);
 });
 
-test("audiência incoerente com o app_id é recusada", async () => {
-  // Assinado, `azp` certo, mas a audiência aponta para outro recurso.
-  const token = await accessTokenDe(APP_A, CLIENT_A, { aud: `volund:app:${APP_B}` });
+test("cliente de MCP de FORA é aceito — vale para quem o token foi emitido", async () => {
+  // O defeito que travou o BUG-113, virado teste. Um cliente que se registrou
+  // sozinho no provedor (RFC 7591) obtém, com o consentimento da pessoa, um
+  // token cuja audiência é este App — e cujo `azp` é dele, não nosso. Enquanto
+  // esta função exigia `azp === client_id`, a resposta era 401 a um token
+  // perfeitamente válido, e nenhum cliente de mercado falava com um App.
+  const token = await accessTokenDe(APP_A, "volund_dcr_de_um_cliente_qualquer");
   const r = await verifyAccessToken(token, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
-  assert.equal(r.ok, false);
-  assert.match(r.ok === false ? r.reason : "", /audiência/);
+  assert.equal(r.ok, true);
+  assert.equal(
+    r.ok === true ? r.claims.azp : null,
+    "volund_dcr_de_um_cliente_qualquer",
+    "o `azp` continua legível: virou trilha de qual cliente entrou",
+  );
+});
+
+test("audiência incoerente com o app_id é recusada — nos dois sentidos", async () => {
+  // A coerência que a versão anterior FINGIA conferir: ela comparava `aud` com
+  // o `app_id` do mesmo token, dois campos que o emissor escreve juntos. Agora
+  // os dois saem da mesma referência externa, então divergir de qualquer um
+  // recusa.
+
+  // `app_id` deste App, audiência de outro.
+  const audDeOutro = await accessTokenDe(APP_A, CLIENT_A, {
+    aud: `volund:app:${APP_B}`,
+  });
+  const r1 = await verifyAccessToken(audDeOutro, {
+    keys,
+    issuer: ISSUER,
+    appId: APP_A,
+  });
+  assert.equal(r1.ok, false);
+  assert.match(r1.ok === false ? r1.reason : "", /audiência/);
+
+  // Audiência deste App, `app_id` de outro. Aceitar faria a `Session` nascer com
+  // o `appId` de outro App — o mapeamento de claims lê `app_id`, não a audiência.
+  const appIdDeOutro = await accessTokenDe(APP_A, CLIENT_A, { app_id: APP_B });
+  const r2 = await verifyAccessToken(appIdDeOutro, {
+    keys,
+    issuer: ISSUER,
+    appId: APP_A,
+  });
+  assert.equal(r2.ok, false);
+  assert.match(r2.ok === false ? r2.reason : "", /outro App/);
 });
 
 test("token expirado é recusado", async () => {
@@ -122,7 +161,7 @@ test("token expirado é recusado", async () => {
   const r = await verifyAccessToken(token, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
   assert.equal(r.ok, false);
   assert.match(r.ok === false ? r.reason : "", /expirado/);
@@ -135,7 +174,7 @@ test("emissor diferente do configurado é recusado", async () => {
   const r = await verifyAccessToken(token, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
   assert.equal(r.ok, false);
   assert.match(r.ok === false ? r.reason : "", /emissor/);
@@ -160,7 +199,7 @@ test("assinatura adulterada é recusada", async () => {
   const r = await verifyAccessToken(`${cabecalho}.${outroCorpo}.${assinatura}`, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
   assert.equal(r.ok, false);
   assert.match(r.ok === false ? r.reason : "", /assinatura/);
@@ -186,7 +225,7 @@ test("`alg: none` é recusado — o token não escolhe o algoritmo", async () =>
   const r = await verifyAccessToken(`${cabecalho}.${corpo}.`, {
     keys,
     issuer: ISSUER,
-    clientId: CLIENT_A,
+    appId: APP_A,
   });
   assert.equal(r.ok, false);
   assert.match(r.ok === false ? r.reason : "", /algoritmo/);
@@ -251,7 +290,7 @@ test("token malformado não estoura exceção", async () => {
     const r = await verifyAccessToken(entrada, {
       keys,
       issuer: ISSUER,
-      clientId: CLIENT_A,
+      appId: APP_A,
     });
     assert.equal(r.ok, false);
   }
