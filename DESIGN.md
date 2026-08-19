@@ -38,7 +38,11 @@ erro. Os tokens estão em `app/globals.css`:
 
 ## O crimson tem peso
 
-`primary` é `#ED3B62`, e é o **único** acento intenso. Ele marca a ação principal
+`primary` é o crimson do VolundOS — `oklch(0.62 0.21 13)`, o MESMO valor que o
+produto usa — e é o **único** acento intenso. Ele fica perto de `#ED3B62`, mas não
+é a conversão exata (essa seria `oklch(0.6308 0.2126 13.67)`): o que importa aqui é
+bater com o token da plataforma, não com o hexadecimal. Se algum dia os dois
+divergirem, o valor da plataforma ganha. Ele marca a ação principal
 da tela — uma por tela. Publicar, salvar, conceder: essas ganham `bg-primary`.
 Trocar credencial, cancelar, filtrar, exportar: essas são secundárias
 (`bg-secondary` ou só borda).

@@ -45,8 +45,14 @@ function sourceFiles(dir = root, out: string[] = []): string[] {
 test("o tema é escuro e o acento é o crimson do VolundOS", () => {
   const css = read("app/globals.css");
 
-  // `#ED3B62` em OKLch. O valor está no DESIGN.md do produto, e é o que faz um
-  // App parecer parte dele em vez de um projeto qualquer com shadcn.
+  // O crimson do VolundOS, no valor que a PLATAFORMA usa — é o que faz um App
+  // parecer parte dela em vez de um projeto qualquer com shadcn.
+  //
+  // Ele não é a conversão exata de `#ED3B62` (essa seria
+  // `oklch(0.6308 0.2126 13.67)`; a diferença é ~1% de luminosidade). A asserção
+  // é sobre o valor da plataforma de propósito: um App com o crimson "mais
+  // correto" que o do produto fica visivelmente diferente ao lado dele, o que é
+  // o oposto do objetivo.
   assert.match(css, /--primary:\s*oklch\(0\.62 0\.21 13\)/, "o crimson saiu do tema");
   // Fundo escuro e WARM: o `oklch(1 0 0)` do shadcn é branco puro.
   assert.match(
