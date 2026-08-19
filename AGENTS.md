@@ -303,14 +303,31 @@ componentes que já estão aqui, então o que você adicionar combina com o rest
 Os componentes de `components/ui/` são a base; o que for específico da aplicação
 vai em `components/`, compondo os de baixo.
 
-**Cores e espaçamento saem dos tokens do tema** (`bg-background`,
-`text-foreground`, `bg-primary`, `border-border`…), definidos em
-`app/globals.css`. Não escreva cor literal: o tema tem modo claro e escuro, e cor
-fixa quebra um dos dois.
+**A aparência tem diretriz própria: leia o `DESIGN.md`.** Ele é curto e diz o que
+usar e o que não fazer — tokens em vez de cor literal, onde o crimson entra (e
+onde não), tipografia, feedback obrigatório em ação assíncrona, skeleton no
+carregamento. Uma tela que ignora aquele arquivo não parece parte do VolundOS, e é
+isso que o usuário nota primeiro.
 
-**Não adicione webfont.** O `layout.tsx` usa a pilha do sistema de propósito —
-`next/font/google` faz o build baixar arquivos de fonte da rede. Se o produto
-exigir uma fonte específica, é decisão do usuário, não default.
+**Cores e espaçamento saem dos tokens do tema** (`bg-background`,
+`text-foreground`, `bg-primary`, `border-border`, `bg-surface`,
+`border-border-subtle`…), definidos em `app/globals.css`. Não escreva cor literal:
+ela não dá erro e envelhece calada.
+
+**O tema é escuro, único.** Não há modo claro, não há toggle, e não se escreve
+`dark:` — o bloco `.dark` do shadcn foi removido de propósito. Uma tela com duas
+aparências tem uma que ninguém testou.
+
+**As fontes já estão no projeto, e não se baixa fonte no build.** Inter e DM Mono
+vivem em `public/fonts/` e são carregadas por `next/font/local` no `layout.tsx`.
+`next/font/google` está fora: ele faz o `next build` buscar em `fonts.gstatic.com`,
+e um build da plataforma já caiu por isso. Precisa de outra fonte? Ponha o arquivo
+ao lado das que já estão lá.
+
+Além dos componentes do shadcn, três primitivos cobrem o que o `DESIGN.md` nomeia
+e a biblioteca não dá: `MonoLabel` (rótulo de seção), `Display` (título com o
+tracking certo para o tamanho) e `SectionSkeleton` (o lugar de um cartão enquanto
+ele carrega).
 
 ## Regras que não se negociam
 

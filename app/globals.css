@@ -7,9 +7,19 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Resolvem contra as variáveis do :root — trocar a fonte é trocar lá. */
+  /* Resolvem contra as variáveis que o `layout.tsx` injeta com `next/font/local`.
+     Trocar a fonte é trocar lá, não aqui. */
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  /* Superfícies e bordas do DESIGN.md, expostas como utilitário do Tailwind:
+     `bg-surface`, `border-border-subtle`, `hover:bg-surface-interactive-hover`. */
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-interactive: var(--surface-interactive);
+  --color-surface-interactive-hover: var(--surface-interactive-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -60,80 +70,77 @@ body {
 }
 
 :root {
-  /* Pilha do sistema: o scaffold não baixa webfont no build (ver app/layout.tsx).
-     Os componentes do shadcn consomem `--font-sans`, então ela precisa ter um
-     valor de verdade — antes era `var(--font-sans)`, auto-referente, e só
-     resolvia porque o `next/font` injetava a variável no <html>. */
+  /* A tipografia vem do `layout.tsx` (`next/font/local`). O fallback existe para
+     o primeiro quadro, antes de o woff2 carregar, e para o caso de ele falhar. */
   --font-sans:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    var(--font-sans-local), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono-local), ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /* ------------------------------------------------------------------------
+     O tema do VolundOS. UM tema — ver DESIGN.md, "dark-mode only".
+     Espaço OKLch: o mesmo do produto, e é o que faz o crimson manter a
+     saturação quando compõe com transparência.
+     ------------------------------------------------------------------------ */
+
+  --background: oklch(0.07 0.01 12); /* preto quente, levemente crimson */
+  --foreground: oklch(0.97 0.005 60);
+
+  /* O acento ÚNICO: #ED3B62. Use com parcimônia — quando ele aparece, importa. */
+  --primary: oklch(0.62 0.21 13);
+  --primary-foreground: oklch(0.07 0.01 12);
+
+  --card: oklch(0.12 0.015 12);
+  --card-foreground: oklch(0.97 0.005 60);
+  --popover: oklch(0.12 0.015 12);
+  --popover-foreground: oklch(0.97 0.005 60);
+
+  --secondary: oklch(1 0 0 / 6%);
+  --secondary-foreground: oklch(0.97 0.005 60);
+  --muted: oklch(1 0 0 / 4%);
+  --muted-foreground: oklch(0.6 0.03 20); /* cinza WARM, não neutro */
+  --accent: oklch(0.55 0.2 10); /* crimson mais fundo */
+  --accent-foreground: oklch(0.97 0.005 60);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.62 0.21 13 / 40%);
+
+  /* Superfícies semânticas: use ESTAS em vez de inventar `bg-white/[0.03]`.
+     Elas são o que mantém dois cartões de telas diferentes com o mesmo peso. */
+  --surface: oklch(1 0 0 / 2%);
+  --surface-elevated: oklch(0.12 0.015 12);
+  --surface-interactive: oklch(1 0 0 / 3%);
+  --surface-interactive-hover: oklch(1 0 0 / 6%);
+  --border-subtle: oklch(1 0 0 / 5%);
+  --border-strong: oklch(1 0 0 / 10%);
+
+  /* Gráficos: o crimson e degraus dele, para uma série ficar legível ao lado da
+     outra sem sair da paleta. */
+  --chart-1: oklch(0.62 0.21 13);
+  --chart-2: oklch(0.55 0.2 10);
+  --chart-3: oklch(0.7 0.14 20);
+  --chart-4: oklch(0.5 0.09 15);
+  --chart-5: oklch(0.4 0.05 15);
+
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  --sidebar: oklch(0.09 0.012 12);
+  --sidebar-foreground: oklch(0.97 0.005 60);
+  --sidebar-primary: oklch(0.62 0.21 13);
+  --sidebar-primary-foreground: oklch(0.07 0.01 12);
+  --sidebar-accent: oklch(1 0 0 / 6%);
+  --sidebar-accent-foreground: oklch(0.97 0.005 60);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.62 0.21 13 / 40%);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
+/* O bloco `.dark` do shadcn foi REMOVIDO, e não esquecido.
+   O DESIGN.md é explícito: dark-mode only, sem toggle, sem variantes `dark:`. Um
+   segundo tema aqui seria um caminho que ninguém percorre e que envelhece — e
+   pior, convidaria a escrever `dark:` no código, o que faz a tela ter duas
+   aparências das quais só uma é testada. O `@custom-variant dark` acima fica:
+   ele é o que faz um `dark:` remanescente de componente do shadcn não estourar. */
 
 @layer base {
   * {

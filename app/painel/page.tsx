@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { MonoLabel } from "@/components/ui/mono-label";
 import { Separator } from "@/components/ui/separator";
 import { requireSession } from "@/lib/auth/server";
 import { verDiagnostico, verPerfil } from "@/lib/services/painel";
@@ -56,6 +57,10 @@ export default async function Painel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {/* Rótulo em mono acima de cada grupo: é o padrão de seção do
+              DESIGN.md, e é o que faz dois blocos de dados na mesma tela não
+              virarem uma lista só. */}
+          <MonoLabel>Quem está entrando</MonoLabel>
           {perfil.ok ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-muted-foreground">Nome</dt>
@@ -75,6 +80,7 @@ export default async function Painel() {
 
           <Separator />
 
+          <MonoLabel>Detalhes técnicos</MonoLabel>
           {diagnostico.ok ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-muted-foreground">App</dt>
