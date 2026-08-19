@@ -1,4 +1,5 @@
 import { buttonVariants } from "@/components/ui/button";
+import { MonoLabel } from "@/components/ui/mono-label";
 import {
   Card,
   CardContent,
@@ -26,12 +27,21 @@ import {
  * Mantida ESTÁTICA de propósito: nada aqui toca o banco nem lê cookie, então o
  * `next build` roda sem `DATABASE_URL` — o Postgres pode ser provisionado depois
  * do primeiro build. A checagem de banco vive em `/api/health`, que é dinâmica.
+ *
+ * ## Ela também é o exemplo do DESIGN.md
+ *
+ * Repare no que ela NÃO tem: nenhuma cor escrita à mão. O fundo escuro e o
+ * crimson vêm dos tokens (`app/globals.css`), então trocar o tema não pede
+ * reescrever tela. E há UMA ação principal — "Entrar", com o `Button` padrão, que
+ * é crimson; "Checar conexão" é `outline`, porque é a ação secundária. Duas ações
+ * crimson na mesma tela fariam a pessoa clicar na errada.
  */
 export default function Home() {
   return (
     <main className="flex flex-1 items-center justify-center p-8">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <MonoLabel>Aplicação</MonoLabel>
           <CardTitle>Aplicação no ar</CardTitle>
           <CardDescription>
             Esta é a página pública. O sistema fica atrás da autenticação da sua
