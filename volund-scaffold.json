@@ -1,6 +1,6 @@
 {
   "$schema": "https://os.volund.com.br/schemas/volund-scaffold-1.json",
-  "contract": 6,
+  "contract": 7,
   "name": "volund-os-scaffold",
   "description": "Next.js (App Router) + Postgres + autentica\u00e7\u00e3o da plataforma (OIDC) + camada de servi\u00e7o com rota de API e endpoint MCP nativos + introspec\u00e7\u00e3o da superf\u00edcie para a governan\u00e7a, com node_modules pr\u00e9-instalado no artefato de release.",
   "stack": {

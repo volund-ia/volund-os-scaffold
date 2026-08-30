@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Suspense } from "react";
+
+import { FrameBinding } from "@/components/volund/frame-binding";
+import { readAuthConfig } from "@/lib/auth/config";
 
 import "./globals.css";
 
@@ -57,6 +61,23 @@ export const metadata: Metadata = {
   description: "Aplicação criada no VolundOS.",
 };
 
+/**
+ * A origem do painel que pode emoldurar esta aplicação, ou `null`.
+ *
+ * É o emissor da identidade — o App já fala com ele em todo login, então não há
+ * configuração nova a fazer. `null` quando o ambiente ainda não foi injetado (App
+ * recém-criado, antes do primeiro deploy): sem origem conhecida, o vínculo de
+ * rota simplesmente não existe, e é melhor não existir do que endereçar mensagem
+ * a um destino inventado.
+ */
+function panelOrigin(): string | null {
+  try {
+    return readAuthConfig().issuer;
+  } catch {
+    return null;
+  }
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -69,6 +90,17 @@ export default function RootLayout({
     >
       <body className="bg-background text-foreground flex min-h-full flex-col">
         {children}
+        {/* O vínculo de rota com o painel que emoldura esta aplicação. Não
+            renderiza nada e não faz nada fora de um quadro.
+
+            Dentro de `<Suspense>` porque ele lê `useSearchParams`: numa página
+            pré-renderizada, isso obriga o Next a ter uma fronteira — sem ela o
+            `next build` falha com "Missing Suspense boundary with
+            useSearchParams", e a vitrine é justamente uma página estática. O
+            fallback é `null` porque o componente também é. */}
+        <Suspense fallback={null}>
+          <FrameBinding parentOrigin={panelOrigin()} />
+        </Suspense>
       </body>
     </html>
   );
