@@ -56,6 +56,11 @@ exceção enumerada em `lib/auth/route-policy.ts`: a vitrine (`/`) e as duas rot
 de bootstrap do login. Uma página nova que você criar exige sessão sem você fazer
 nada.
 
+**A vitrine é só para quem NÃO entrou.** Com sessão, `/` redireciona para
+`APP_HOME_PATH` (`lib/auth/config.ts`) — hoje `/painel`. Se você mudar a home da
+aplicação, mude essa constante junto: ela é o destino de quem abre o App pelo
+painel do VolundOS, e um valor desatualizado vira 404 logo depois do login.
+
 Para usar a identidade:
 
 ```ts
