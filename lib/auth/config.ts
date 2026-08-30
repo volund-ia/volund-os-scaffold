@@ -40,6 +40,23 @@ export const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-re
 export const SESSION_COOKIE = "volund_session";
 
 /**
+ * A home de quem JÁ entrou.
+ *
+ * Existe porque a raiz (`/`) é a vitrine pública, e a vitrine não pode ser o
+ * destino de quem tem sessão: dentro do painel do VolundOS o App é aberto pela
+ * raiz, e uma página que sempre mostra "Entrar" faz uma sessão válida de trinta
+ * dias parecer expirada. Era exatamente o que acontecia — o quadro abria a
+ * vitrine, a pessoa clicava em Entrar, e a impressão era a de que o login
+ * precisava ser refeito toda vez.
+ *
+ * **Ao mudar a home da aplicação, mude esta constante junto.** Ela é o único
+ * lugar que diz para onde a raiz manda quem já tem sessão; um valor
+ * desatualizado aqui vira um 404 logo depois do login, que é onde ninguém vai
+ * procurar.
+ */
+export const APP_HOME_PATH = "/painel";
+
+/**
  * Cookie efêmero do aperto de mão: guarda `state`, `nonce`, o verificador do
  * PKCE e para onde voltar. Vive entre o `/api/auth/login` e o callback, e é
  * apagado assim que o código é trocado.
