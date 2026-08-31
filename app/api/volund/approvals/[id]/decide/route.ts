@@ -30,6 +30,11 @@ const corpo = z.object({
   motivo: z.string().max(500).optional(),
 });
 
+/**
+ * Processes an approval or rejection decision for a paused Volund request.
+ *
+ * @returns A response indicating whether the decision was submitted successfully or describing the validation, authentication, or agent-channel error.
+ */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
 

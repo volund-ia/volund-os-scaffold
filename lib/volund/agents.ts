@@ -53,12 +53,10 @@ export const AGENTS_RUN_SCOPE = "volund.agents.run";
 export const PLATFORM_API_PATH = "/api/v1";
 
 /**
- * O recurso que o pedido nomeia (RFC 8707).
+ * Builds the platform API resource URL for token exchange.
  *
- * A plataforma o exige — ela não escolhe a audiência no escuro — e compara por
- * origem mais caminho. Montá-lo aqui a partir do emissor é o que faz este
- * arquivo continuar certo em produção, em prévia e no ambiente local, sem
- * configuração por ambiente.
+ * @param issuer - The platform issuer URL
+ * @returns The issuer URL with the platform API path appended
  */
 export function platformApiResource(issuer: string): string {
   return new URL(PLATFORM_API_PATH, issuer).toString();
@@ -144,7 +142,7 @@ interface CachedToken {
 
 const tokenCache = new Map<string, CachedToken>();
 
-/** Só para teste: zera os caches entre casos. */
+/** Clears the agent channel token and roster caches for test isolation. */
 export function resetAgentChannelCacheForTests(): void {
   tokenCache.clear();
   rosterCache = null;
@@ -159,15 +157,12 @@ interface TokenExchangeResponse {
 }
 
 /**
- * Troca o token da sessão por um token de plataforma, em nome de quem está
- * usando a aplicação.
+ * Exchanges the authenticated session token for a platform access token.
  *
- * ## Por que o cache é por pessoa
- *
- * Porque o token É a pessoa. Uma entrada compartilhada entre usuários faria a
- * conversa de um nascer no nome do outro — o defeito exato que este arquivo
- * existe para não ter. A chave inclui a organização porque a mesma pessoa pode
- * estar em mais de uma, e o token vale numa só.
+ * @param session - The authenticated user session whose identity is preserved
+ * @param config - Authentication configuration for the platform issuer
+ * @returns The exchanged platform access token
+ * @throws `AgentChannelError` if no agent is configured or the provider is unavailable
  */
 export async function exchangeForPlatformToken(
   session: Session,
@@ -238,10 +233,7 @@ export async function exchangeForPlatformToken(
 }
 
 /**
- * Guarda o token trocado e mantém o teto do cache.
- *
- * A reinserção não é cosmética: ela é o que faz o descarte abaixo tirar sempre
- * a entrada menos recente.
+ * Stores a token in the cache and evicts the least recently used entry when the cache exceeds its limit.
  */
 function rememberToken(key: string, entry: CachedToken): void {
   tokenCache.delete(key);
@@ -305,8 +297,9 @@ interface CachedRoster extends Roster {
 let rosterCache: CachedRoster | null = null;
 
 /**
- * O roteiro inteiro, incluindo os identificadores. Interno: quem chama de fora
- * pede `listAppAgents` (a tela) ou `resolveAgentId` (o servidor).
+ * Loads and caches the App's configured agent roster, including server-side platform identifiers.
+ *
+ * @returns The loaded roster of agents and their platform identifier mappings.
  */
 async function loadRoster(
   session: Session,
@@ -357,7 +350,11 @@ async function loadRoster(
   return { agents, ids };
 }
 
-/** Os agentes que este App oferece. Só os habilitados — a plataforma já filtra. */
+/**
+ * Lists the agents currently configured for the App.
+ *
+ * @returns The configured App agents.
+ */
 export async function listAppAgents(
   session: Session,
   config: AuthConfig = readAuthConfig(),
@@ -368,11 +365,11 @@ export async function listAppAgents(
 }
 
 /**
- * Do apelido para o agente. Sem apelido, o padrão do App.
+ * Selects an App agent by key or chooses the configured default agent.
  *
- * O recuo para o primeiro da lista existe porque "sem padrão" é um estado
- * possível — a promoção a padrão pode ter falhado no painel — e nesse caso
- * mostrar a aplicação sem agente nenhum seria pior do que abrir com um.
+ * @param agents - The available App agents
+ * @param key - The requested agent key, or `null` or `undefined` to use the default
+ * @returns The selected agent, or `null` when the requested key is unavailable or no agents exist
  */
 export function selectAgent(agents: AppAgent[], key?: string | null): AppAgent | null {
   if (key) return agents.find((a) => a.key === key) ?? null;
@@ -380,13 +377,11 @@ export function selectAgent(agents: AppAgent[], key?: string | null): AppAgent |
 }
 
 /**
- * Do apelido para o identificador que a plataforma usa, com o roteiro no meio.
+ * Resolves an App-facing agent key to the platform identifier selected from the configured roster.
  *
- * É esta função que mantém a promessa do apelido: o identificador do agente é
- * resolvido **no servidor**, a partir do roteiro, e nunca viaja pelo navegador.
- * Uma tela que pudesse mandar o identificador direto endereçaria qualquer
- * agente da organização — o roteiro deixaria de ser a oferta e viraria uma
- * sugestão.
+ * @param key - The App-facing agent key to select, or `null` to use the default agent.
+ * @returns The selected agent and its server-side platform identifier.
+ * @throws `AgentChannelError` if no agent is available or the selected agent cannot be resolved.
  */
 export async function resolveAgentId(
   session: Session,
@@ -407,12 +402,11 @@ export async function resolveAgentId(
 }
 
 /**
- * O cliente do SDK, autenticado como a pessoa que está usando a aplicação.
+ * Creates an SDK client authenticated as the current user.
  *
- * `apiKey` é o nome do campo no SDK, e não o que ele carrega aqui: o valor é o
- * token da troca, que vale dez minutos e representa uma pessoa. Não é chave de
- * organização, não vive em variável de ambiente, e não deve ser guardado em
- * lugar nenhum além do cache acima.
+ * @param session - The authenticated user session
+ * @param config - Authentication configuration used to exchange the session token and set the API base URL
+ * @returns An authenticated `VolundOS` client
  */
 export async function volundFor(
   session: Session,

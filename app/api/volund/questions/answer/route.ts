@@ -59,6 +59,11 @@ export const corpoDaResposta = z
       "Informe `respostas` OU `pular: true` — nunca os dois juntos, nunca nenhum dos dois.",
   });
 
+/**
+ * Handles an agent question answer or skip request.
+ *
+ * @returns A JSON response with `{ ok: true }` on success, or an appropriate authorization, validation, or operational error response.
+ */
 export async function POST(request: Request) {
   const gate = await guard();
   if (!gate.ok) return gate.response;

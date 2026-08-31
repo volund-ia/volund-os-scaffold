@@ -81,8 +81,9 @@ interface CardDePergunta {
 type Pausa = { tipo: "aprovacao"; id: string } | { tipo: "credencial" } | null;
 
 /**
- * A conversa em si. Recebe o roteiro pronto do servidor e daqui para baixo é
- * tudo cliente — conversa é interação.
+ * Renders an interactive chat interface for selected application agents.
+ *
+ * @param agents - The agents available for selection in the chat.
  */
 export function AgentChat({ agents }: { agents: AppAgent[] }) {
   const [selecionado, setSelecionado] = useState(
@@ -124,7 +125,11 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mensagens, card, pausa]);
 
-  /** Trocar de agente começa outra conversa: o histórico é por agente. */
+  /**
+   * Selects an agent and starts a new conversation for it.
+   *
+   * @param key - The key of the agent to select
+   */
   function trocarAgente(key: string) {
     setSelecionado(key);
     conversaId.current = null;
@@ -270,7 +275,12 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
     [enviando, selecionado],
   );
 
-  /** Manda as escolhas da pessoa. O card só sai da tela se elas chegarem. */
+  /**
+   * Submits the selected answers for a question card.
+   *
+   * @param perguntaId - Identifier of the question card being answered
+   * @param respostas - Selected answer keyed by question identifier
+   */
   async function responderCard(perguntaId: string, respostas: Record<string, string>) {
     setDecidindo(true);
     try {
@@ -291,8 +301,9 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   }
 
   /**
-   * Diz que a pessoa não quis escolher. O agente segue com a melhor decisão
-   * possível em vez de esperar até desistir sozinho, com a tela parada.
+   * Skips the pending question and allows the agent to continue without a selection.
+   *
+   * @param perguntaId - Identifier of the question card to skip
    */
   async function pularCard(perguntaId: string) {
     setDecidindo(true);
@@ -317,9 +328,10 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   }
 
   /**
-   * Libera ou recusa a ferramenta que pausou o agente. A retomada acontece do
-   * outro lado e NÃO volta por esta conexão, que já fechou — daí a frase que
-   * fica na tela dizendo o que esperar.
+   * Records the approval or refusal of a tool action that paused the agent.
+   *
+   * @param id - Identifier of the paused tool request
+   * @param decisao - Whether to approve or refuse the request
    */
   async function decidir(id: string, decisao: "aprovar" | "recusar") {
     setDecidindo(true);
@@ -468,7 +480,11 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   );
 }
 
-/** O que a tela mostra antes da primeira mensagem: quem é o agente e o que ele faz. */
+/**
+ * Displays the selected agent's name and description before the conversation begins.
+ *
+ * @param agente - The selected agent, if one is available.
+ */
 function EstadoVazio({ agente }: { agente: AppAgent | undefined }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
@@ -482,7 +498,9 @@ function EstadoVazio({ agente }: { agente: AppAgent | undefined }) {
   );
 }
 
-/** Os três pontos enquanto nada chegou ainda. Vazio leria-se como travado. */
+/**
+ * Renders an accessible animated indicator while a response is being written.
+ */
 function Escrevendo() {
   return (
     <div className="flex items-center gap-1" aria-label="Escrevendo" role="status">
@@ -497,7 +515,11 @@ function Escrevendo() {
   );
 }
 
-/** Recado de erro ou de pausa. Mesma caixa para os dois, para não competirem. */
+/**
+ * Renders an alert-style notice for errors and paused agent interactions.
+ *
+ * @param children - The notice content to display
+ */
 function Aviso({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-border-subtle bg-surface-elevated text-muted-foreground flex items-start gap-2 rounded-[14px] border p-3.5 text-[13px] leading-[1.6]">
@@ -508,8 +530,12 @@ function Aviso({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * O card que o agente abriu, com as opções dele. O turno CONTINUA quando a
- * resposta chega — por isso ele aparece no meio da conversa em vez de encerrá-la.
+ * Renders an interactive question card with single-choice answers and skip controls.
+ *
+ * @param card - The agent question card to display
+ * @param ocupado - Whether an answer or skip action is being submitted
+ * @param onResponder - Called with the card ID and selected answers
+ * @param onPular - Called with the card ID when the user skips the questions
  */
 function CardPergunta({
   card,
@@ -610,8 +636,11 @@ function CardPergunta({
 }
 
 /**
- * O pedido de liberação. Aqui o stream já FECHOU: o agente parou esperando uma
- * decisão, e é ela que o retoma.
+ * Presents approval controls for a paused agent operation.
+ *
+ * @param id - Identifier of the operation requiring approval
+ * @param ocupado - Whether a decision is being submitted
+ * @param onDecidir - Callback invoked with the operation identifier and selected decision
  */
 function CardAprovacao({
   id,
@@ -701,17 +730,14 @@ async function* lerEventos(
 }
 
 /**
- * O payload do card chega como `unknown` — o contrato de eventos não o tipa, de
- * propósito, porque ele é do agente e não do protocolo. Estreitar aqui é o que
- * impede um card estranho de derrubar a tela: o que não tem a forma esperada
- * simplesmente não aparece.
+ * Validates and normalizes agent question payloads for rendering.
  *
- * **`multiSelect` é ignorado, e a escolha continua sendo uma.** A resposta que a
- * plataforma recebe é um texto por pergunta, e não uma lista; inventar uma
- * codificação para várias opções (juntar com vírgula, por exemplo) seria
- * combinar um formato com o outro lado sem ele estar de acordo. Um card de
- * múltipla escolha vira escolha única aqui, e quem quiser acrescentar diz na
- * mensagem seguinte.
+ * Invalid entries and options are discarded. Each retained question includes a
+ * string question, at least one option with a string label, and optional string
+ * header and description values. Multiple-choice metadata is ignored.
+ *
+ * @param bruto - The unknown payload received from the agent
+ * @returns The valid normalized questions
  */
 function lerPerguntas(bruto: unknown): Pergunta[] {
   if (!Array.isArray(bruto)) return [];

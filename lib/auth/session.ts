@@ -231,16 +231,10 @@ interface TokenEndpointResponse {
 }
 
 /**
- * Autenticação do client no token endpoint por `client_secret_basic`.
+ * Creates an HTTP Basic authentication header for the OAuth client.
  *
- * Os dois campos vão percent-encoded (RFC 6749 §2.3.1) — um segredo com `:` ou
- * caractere não-ASCII quebraria a decodificação do outro lado sem isso.
- *
- * Exportada porque a troca de token do canal de agentes (`lib/volund/agents.ts`)
- * fala com o MESMO token endpoint e precisa se autenticar do MESMO jeito. Uma
- * segunda cópia divergiria justamente no percent-encoding acima — e o sintoma
- * seria "o login funciona mas o chat não entra", com o segredo certo dos dois
- * lados.
+ * @param config - Configuration containing the client ID and client secret
+ * @returns A Basic authentication header with percent-encoded credentials
  */
 export function basicAuthHeader(config: AuthConfig): string {
   const raw = `${encodeURIComponent(config.clientId)}:${encodeURIComponent(config.clientSecret)}`;
