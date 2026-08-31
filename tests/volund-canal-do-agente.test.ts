@@ -435,4 +435,15 @@ test("os três números de contrato andam juntos", () => {
 
   assert.equal(contrato.contract, manifesto.contract);
   assert.equal(claims.contract, manifesto.contract);
+
+  // E um PISO, não só a igualdade entre eles. Sem esta linha, os três voltarem
+  // JUNTOS para 7 passaria — e o canal deixaria de existir para toda a
+  // organização, porque a plataforma só o serve a partir de 8
+  // (`SUPPORTED_CONTRACT`). É `>=` e não `=== 8` de propósito: o requisito é
+  // "pelo menos 8", e um número exato precisaria ser mexido no contrato 9 sem
+  // que nada de verdade tivesse mudado aqui.
+  assert.ok(
+    manifesto.contract >= 8,
+    `o canal de agentes exige contrato >= 8; o manifesto declara ${manifesto.contract}`,
+  );
 });

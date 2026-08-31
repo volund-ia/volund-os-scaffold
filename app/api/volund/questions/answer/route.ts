@@ -51,14 +51,16 @@ export async function POST(request: Request) {
 
   try {
     const volund = await volundFor(gate.session);
-    if ("pular" in parsed.data && parsed.data.pular === true) {
-      await volund.questions.skip(parsed.data.perguntaId, { signal: request.signal });
+    // A pergunta é pelo campo que vai ser USADO, e não pela bandeira que
+    // escolhe o ramo: assim o TypeScript estreita o union sozinho e o `as` some.
+    // Um `as` aqui não validaria nada — só calaria o compilador sobre o campo
+    // que o schema já garante.
+    if ("respostas" in parsed.data) {
+      await volund.questions.answer(parsed.data.perguntaId, parsed.data.respostas, {
+        signal: request.signal,
+      });
     } else {
-      await volund.questions.answer(
-        parsed.data.perguntaId,
-        (parsed.data as { respostas: Record<string, string> }).respostas,
-        { signal: request.signal },
-      );
+      await volund.questions.skip(parsed.data.perguntaId, { signal: request.signal });
     }
     return Response.json({ ok: true });
   } catch (err) {

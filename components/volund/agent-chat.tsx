@@ -103,6 +103,19 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   const conversaId = useRef<string | null>(null);
   const fim = useRef<HTMLDivElement>(null);
 
+  /**
+   * O envio em voo, para poder abortá-lo.
+   *
+   * Sem isto, sair da tela deixava o turno rodando. A rota de stream derruba o
+   * ambiente do agente no `cancel` do corpo da resposta — e desmontar o
+   * componente não cancela nada por si: o `fetch` e o laço de leitura seguem
+   * vivos, sem ninguém para ler. O agente continuaria trabalhando para uma tela
+   * que não existe mais, consumindo o que é da pessoa.
+   */
+  const emVoo = useRef<AbortController | null>(null);
+
+  useEffect(() => () => emVoo.current?.abort(), []);
+
   useEffect(() => {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mensagens, card, pausa]);
@@ -147,12 +160,33 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
         );
       };
 
+      /**
+       * Tira da tela a bolha vazia do agente.
+       *
+       * Ela é inserida ANTES da resposta chegar, e sem isto um caminho de erro a
+       * deixava com texto e passos vazios — que é exatamente a condição de
+       * `Escrevendo`. A pessoa via os três pontos animados ao lado do aviso de
+       * falha e concluía que a resposta ainda estava a caminho.
+       */
+      const descartarBolhaVazia = () =>
+        setMensagens((atual) =>
+          atual.filter(
+            (m) => m.id !== idAgente || m.tipo !== "agente" || m.texto !== "",
+          ),
+        );
+
       try {
+        // Um envio de cada vez: se ainda houver outro em voo, ele perdeu a vez.
+        emVoo.current?.abort();
+        const controle = new AbortController();
+        emVoo.current = controle;
+
         const resposta = await fetch(
           `/api/volund/agents/${encodeURIComponent(selecionado)}/stream`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
+            signal: controle.signal,
             body: JSON.stringify({
               input: limpo,
               ...(conversaId.current ? { conversaId: conversaId.current } : {}),
@@ -165,6 +199,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
             message?: string;
           } | null;
           setErro(corpo?.message ?? "Não consegui falar com o assistente agora.");
+          descartarBolhaVazia();
           return;
         }
 
@@ -217,6 +252,11 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
           }
         }
       } catch (err) {
+        descartarBolhaVazia();
+        // Cancelamento é pedido nosso — sair da tela, ou mandar outra mensagem
+        // por cima. Mostrar "a conexão caiu" aí seria acusar defeito de uma
+        // coisa que a própria pessoa fez.
+        if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("[volund] falha ao conversar:", err);
         setErro("A conexão caiu no meio da resposta. Tente enviar de novo.");
       } finally {
@@ -248,11 +288,19 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   async function pularCard(perguntaId: string) {
     setDecidindo(true);
     try {
-      await fetch("/api/volund/questions/answer", {
+      const r = await fetch("/api/volund/questions/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ perguntaId, pular: true }),
       });
+      // O card só sai da tela se a recusa TIVER chegado. Limpá-lo de qualquer
+      // jeito tirava da pessoa o único controle que retoma o turno, com o
+      // agente ainda esperando do outro lado.
+      if (!r.ok) {
+        const corpo = (await r.json().catch(() => null)) as { message?: string } | null;
+        setErro(corpo?.message ?? "Não consegui enviar sua resposta.");
+        return;
+      }
       setCard(null);
     } finally {
       setDecidindo(false);
@@ -471,15 +519,29 @@ function CardPergunta({
       ) : null}
       {card.perguntas.map((p) => (
         <fieldset key={p.question} className="flex flex-col gap-2">
-          {p.header ? <MonoLabel>{p.header}</MonoLabel> : null}
-          <legend className="text-[14px] font-medium">{p.question}</legend>
-          <div className="flex flex-wrap gap-2">
+          {/* O `<legend>` tem de ser o PRIMEIRO filho do `<fieldset>` — o
+              rótulo em mono vem dentro dele. Fora dessa posição o navegador
+              deixa de tratá-lo como legenda, e o grupo fica sem nome
+              acessível: um leitor de tela anuncia as opções sem a pergunta. */}
+          <legend className="flex flex-col gap-1 text-[14px] font-medium">
+            {p.header ? <MonoLabel>{p.header}</MonoLabel> : null}
+            {p.question}
+          </legend>
+          <div
+            role="radiogroup"
+            aria-label={p.question}
+            className="flex flex-wrap gap-2"
+          >
             {p.options.map((o) => {
               const ativo = escolhas[p.question] === o.label;
               return (
                 <button
                   key={o.label}
                   type="button"
+                  // Mesma semântica do seletor de agente: sem `role`/
+                  // `aria-checked`, "escolhida" existe só como cor.
+                  role="radio"
+                  aria-checked={ativo}
                   disabled={ocupado}
                   onClick={() =>
                     setEscolhas((atual) => ({ ...atual, [p.question]: o.label }))
