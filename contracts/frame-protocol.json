@@ -2,7 +2,8 @@
   "$comment": "Contrato das mensagens entre o painel do VolundOS e um App EMOLDURADO nele. Versionado IDÊNTICO nos dois repositórios (volund-os e volund-os-scaffold); a coordenação é o número de contrato do scaffold. Ver contracts/README.md.",
   "$comment_porque": "O quadro é de outra origem: o painel não consegue LER a URL de dentro dele (`contentDocument` é null, `location` lança SecurityError) — e é essa mesma barreira que torna o `sandbox` seguro. Sem um aviso explícito, a barra de rota do painel só sabia o caminho que ela mesma tinha comandado, e ficava desatualizada assim que a pessoa clicava num link DENTRO da aplicação. Este é o canal que faltava, e ele é de aviso: quem navega continua sendo a aplicação.",
   "$comment_origem": "As duas pontas endereçam a origem exata da outra e recusam qualquer outra. O App conhece a do painel por `VOLUND_OIDC_ISSUER`; o painel conhece a do App pelo endereço que ele mesmo emoldurou. Postar para `*` publicaria a navegação da pessoa para qualquer página que resolvesse emoldurar o App.",
-  "contract": 7,
+  "$comment_v8": "O contrato 8 não mexe neste protocolo. O número acompanha o do scaffold porque é o mesmo número — ver contracts/README.md e a trava em tests/unit/apps-frame-protocol.test.ts.",
+  "contract": 8,
   "appToPanel": {
     "$comment": "Enviada pelo App a cada mudança de rota, e uma vez ao montar. O painel usa para refletir o caminho no endereço dele — nunca para recompor o `src` do quadro, o que criaria laço de recarga.",
     "source": "volund-app",
