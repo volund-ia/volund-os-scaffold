@@ -44,6 +44,7 @@ import {
   type AppAgent,
 } from "../lib/volund/agents";
 import { agentChannelResponse } from "../lib/volund/channel-http";
+import { corpoDaResposta } from "../app/api/volund/questions/answer/route";
 
 const ISSUER = "https://provedor.exemplo.test";
 const APP_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -423,6 +424,40 @@ test("roteiro em formato inesperado não vira agente sem nome na tela", async (t
   );
   assert.ok(erro instanceof AgentChannelError);
   assert.equal(erro.code, "indisponivel");
+});
+
+test("responder e pular são exclusivos, e um corpo que diz os dois é recusado", () => {
+  const respondendo = corpoDaResposta.safeParse({
+    perguntaId: "p1",
+    respostas: { "Qual ambiente?": "Produção" },
+  });
+  assert.equal(respondendo.success, true);
+  // O caso está ARMADO: não basta o corpo ser aceito. As respostas têm de
+  // CHEGAR — era exatamente isso que o `union` anterior descartava.
+  assert.deepEqual(respondendo.success && respondendo.data.respostas, {
+    "Qual ambiente?": "Produção",
+  });
+
+  assert.equal(
+    corpoDaResposta.safeParse({ perguntaId: "p1", pular: true }).success,
+    true,
+  );
+
+  // O apontamento da revisão, reproduzido: com o `union` de dois objetos isto
+  // era ACEITO — o segundo membro descartava `respostas` (Zod remove chave
+  // desconhecida por padrão) e a rota chamava `skip`. As escolhas da pessoa
+  // sumiam sem uma palavra.
+  assert.equal(
+    corpoDaResposta.safeParse({
+      perguntaId: "p1",
+      respostas: { "Qual ambiente?": "Produção" },
+      pular: true,
+    }).success,
+    false,
+  );
+
+  // Nenhum dos dois também não diz nada. Continua recusado.
+  assert.equal(corpoDaResposta.safeParse({ perguntaId: "p1" }).success, false);
 });
 
 test("os três números de contrato andam juntos", () => {

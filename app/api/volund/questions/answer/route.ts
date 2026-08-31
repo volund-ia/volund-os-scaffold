@@ -30,37 +30,53 @@ import { agentChannelResponse } from "@/lib/volund/channel-http";
 
 export const dynamic = "force-dynamic";
 
-const corpo = z.union([
-  z.object({
+/**
+ * Um corpo diz UMA coisa: ou as respostas, ou o pedido de pular.
+ *
+ * ## Por que não é um `union` de dois objetos
+ *
+ * Era, e o `union` aceitava calado um corpo que dizia as duas. `z.object`
+ * DESCARTA chave desconhecida por padrão: `{ perguntaId, respostas, pular: true }`
+ * é recusado pelo primeiro membro (que exige `pular` ausente ou `false`), cai no
+ * segundo — e o segundo não conhece `respostas`, então ela é **removida**. O que
+ * chegava ao outro lado era um "pular" limpo, e as escolhas da pessoa sumiam sem
+ * uma palavra. Medido: `safeParse` devolve `success: true` com
+ * `{"perguntaId":"p1","pular":true}`.
+ *
+ * Um objeto só com a exclusividade declarada recusa esse corpo em vez de
+ * escolher por conta própria qual das duas intenções valia. A mensagem diz o que
+ * fazer, porque "dados inválidos" sobre um corpo que parece completo é o tipo de
+ * erro que se investiga no lugar errado.
+ */
+export const corpoDaResposta = z
+  .object({
     perguntaId: z.string().min(1).max(200),
-    respostas: z.record(z.string(), z.string()),
-    pular: z.literal(false).optional(),
-  }),
-  z.object({
-    perguntaId: z.string().min(1).max(200),
-    pular: z.literal(true),
-  }),
-]);
+    respostas: z.record(z.string(), z.string()).optional(),
+    pular: z.boolean().optional(),
+  })
+  .refine((v) => (v.pular === true) !== (v.respostas !== undefined), {
+    message:
+      "Informe `respostas` OU `pular: true` — nunca os dois juntos, nunca nenhum dos dois.",
+  });
 
 export async function POST(request: Request) {
   const gate = await guard();
   if (!gate.ok) return gate.response;
 
-  const parsed = await parseJsonBody(request, corpo);
+  const parsed = await parseJsonBody(request, corpoDaResposta);
   if (!parsed.ok) return validationResponse(parsed);
 
   try {
     const volund = await volundFor(gate.session);
-    // A pergunta é pelo campo que vai ser USADO, e não pela bandeira que
-    // escolhe o ramo: assim o TypeScript estreita o union sozinho e o `as` some.
-    // Um `as` aqui não validaria nada — só calaria o compilador sobre o campo
-    // que o schema já garante.
-    if ("respostas" in parsed.data) {
-      await volund.questions.answer(parsed.data.perguntaId, parsed.data.respostas, {
-        signal: request.signal,
-      });
+    // A pergunta é pelo campo que vai ser USADO, e não pela bandeira. Com a
+    // exclusividade garantida pelo schema, `respostas` presente significa
+    // responder, e ausente significa pular — sem `as` e sem terceira
+    // possibilidade.
+    const { perguntaId, respostas } = parsed.data;
+    if (respostas) {
+      await volund.questions.answer(perguntaId, respostas, { signal: request.signal });
     } else {
-      await volund.questions.skip(parsed.data.perguntaId, { signal: request.signal });
+      await volund.questions.skip(perguntaId, { signal: request.signal });
     }
     return Response.json({ ok: true });
   } catch (err) {
