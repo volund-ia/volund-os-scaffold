@@ -15,11 +15,15 @@ import { cn } from "@/lib/utils";
  *
  * ## Iniciais, e não a imagem do agente
  *
- * O roteiro traz o endereço da imagem, e mostrá-la exigiria autorizar o domínio
- * dela em `next.config.ts` (`images.remotePatterns`) — uma decisão sobre de onde
- * esta aplicação aceita carregar imagem, que não cabe ao scaffold tomar por
- * ninguém. As iniciais funcionam em qualquer implantação e não dependem de a
- * rede responder.
+ * O `avatar` do roteiro é um **slug** (`"assistant"`), e não um endereço de
+ * imagem: quem sabe desenhá-lo é o painel do VolundOS, que tem o conjunto de
+ * ilustrações. Aqui ele não resolve para nada, e tratá-lo como URL renderizaria
+ * uma imagem quebrada — o campo continua sendo entregue no tipo porque faz parte
+ * do contrato, não porque esta tela saiba usá-lo.
+ *
+ * As iniciais funcionam em qualquer implantação, não dependem de a rede
+ * responder e não pedem nenhuma decisão sobre de onde a aplicação aceita
+ * carregar imagem.
  */
 export function AgentPicker({
   agents,

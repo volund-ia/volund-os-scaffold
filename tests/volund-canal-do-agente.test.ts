@@ -122,7 +122,7 @@ let respostaDoRoteiro: { status: number; body: unknown } = {
         agent_id: "agente-cobranca-2",
         name: "Cobrança",
         description: null,
-        avatar: "https://exemplo.test/avatar.png",
+        avatar: "assistant",
         is_default: false,
       },
     ],
@@ -155,7 +155,7 @@ beforeEach(() => {
           agent_id: "agente-cobranca-2",
           name: "Cobrança",
           description: null,
-          avatar: "https://exemplo.test/avatar.png",
+          avatar: "assistant",
           is_default: false,
         },
       ],
@@ -353,7 +353,10 @@ test("o roteiro chega traduzido, e sem o identificador do agente", async () => {
   assert.equal(agenteEm(agents, 0).name, "Suporte");
   assert.equal(agenteEm(agents, 0).isDefault, true);
   assert.equal(agenteEm(agents, 1).description, null);
-  assert.equal(agenteEm(agents, 1).avatar, "https://exemplo.test/avatar.png");
+  // Slug, e não URL: é o que a plataforma emite (`agents.avatar` nasce
+  // `'assistant'`). Uma URL de mentira aqui ensinaria o formato errado a quem
+  // lesse o teste para saber o que esperar do campo.
+  assert.equal(agenteEm(agents, 1).avatar, "assistant");
 
   // O identificador NÃO viaja para a tela.
   const serializado = JSON.stringify(agents);

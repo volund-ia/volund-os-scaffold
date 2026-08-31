@@ -70,6 +70,11 @@ export interface AppAgent {
   key: string;
   name: string;
   description: string | null;
+  /**
+   * O **slug** da ilustração (`"assistant"`), e não um endereço de imagem. Quem
+   * sabe desenhá-lo é o painel do VolundOS; aqui ele não resolve para nada.
+   * Tratá-lo como URL rende uma imagem quebrada.
+   */
   avatar: string | null;
   isDefault: boolean;
 }
