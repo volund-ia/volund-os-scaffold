@@ -30,6 +30,27 @@ lado.
 | `accessToken.scoped` | Claim → escopo que o libera. Sem o escopo, o claim **não sai** — é o que impede o token de virar "o perfil de quem o pediu".                        |
 | `session`            | Campo da sessão que o App enxerga → claim que o alimenta. É esta linha que estava quebrada no caso do `email`.                                      |
 
+## `agent-channel.json`
+
+Descreve o **canal de agentes** (contrato 8): como esta aplicação atravessa a
+fronteira de audiência para falar com a plataforma **em nome de quem está usando
+ela**, e o que recebe de volta.
+
+| Campo      | O que significa                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exchange` | Os valores do pedido de troca (RFC 8693): `grant_type`, os tipos de token, o caminho do `resource` e o escopo. Errar um deles vira recusa, não comportamento diferente. |
+| `roster`   | O endereço e os campos do roteiro de agentes, lido em tempo de execução.                                                                                                |
+| `proxy`    | As rotas deste scaffold que a tela usa — e o `channel_error`, o único quadro que o proxy emite por conta própria.                                                       |
+
+Duas coisas que ele fixa e que vale ler antes de mexer:
+
+- **`serverOnlyFields`.** O roteiro traz o identificador do agente, e ele **não**
+  atravessa o navegador. Se atravessasse, uma tela poderia endereçar qualquer
+  agente da organização — e a oferta do App deixaria de ser oferta.
+- **`channel_error` fica de fora da união de eventos do agente.** Traduzir uma
+  queda de conexão para `run_finished status:"failed"` diria que o agente falhou,
+  e ele pode ter terminado bem do outro lado.
+
 ## Como as duas pontas usam
 
 - **`volund-os`** (`tests/unit/oidc-contrato-de-claims.test.ts`): confere que
@@ -38,6 +59,11 @@ lado.
 - **`volund-os-scaffold`** (`tests/auth-contrato-de-claims.test.ts`): confere
   que a sessão montada a partir desses claims chega com todos os campos
   preenchidos — nenhum `null` onde o contrato promete valor.
+- **`agent-channel.json`** é conferido por
+  `tests/volund-canal-do-agente.test.ts`: o pedido montado em
+  `lib/volund/agents.ts` leva exatamente o que o arquivo descreve, então mudar o
+  código sem mudar o contrato falha. Ele confere **este** lado — a outra ponta
+  cai na ressalva do fim desta página.
 
 ## Como mudar o contrato
 

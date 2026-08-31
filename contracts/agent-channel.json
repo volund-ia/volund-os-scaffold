@@ -1,0 +1,39 @@
+{
+  "$comment": "Contrato do CANAL DE AGENTES entre a plataforma (volund-os) e o scaffold dos Apps (volund-os-scaffold). Descreve como a aplicação publicada atravessa a fronteira de audiência para falar com a plataforma em nome de quem está usando ela — e o que ela recebe de volta. Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
+  "contract": 8,
+  "exchange": {
+    "$comment": "RFC 8693. O App troca o access token da SESSÃO de quem está usando a aplicação (aud = volund:app:<id>) por um token de PLATAFORMA (aud = volund:platform:api). O sujeito continua sendo a pessoa; o `act` diz que foi este App que carregou. Autenticado com o segredo do App, no servidor — o token trocado nunca chega ao navegador.",
+    "endpoint": "token_endpoint do documento de descoberta OIDC",
+    "client_authentication": "client_secret_basic",
+    "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "resource_path": "/api/v1",
+    "scope": "volund.agents.run",
+    "errors": {
+      "invalid_target": "O app não oferece nenhum agente. Não é falha: é o estado de quem ainda não vinculou nenhum na aba Agentes do painel do app.",
+      "invalid_grant": "O token da sessão não serve para esta troca — expirado, de outro app ou de um agente.",
+      "unauthorized_client": "Quem pediu não é o cliente de um App do VolundOS."
+    }
+  },
+  "roster": {
+    "$comment": "O que o App oferece, lido em tempo de execução. É o que faz vincular um agente aparecer na aplicação SEM republicar — e a razão de o contrato 8 não acrescentar nenhuma variável de ambiente obrigatória.",
+    "method": "GET",
+    "path": "/api/v1/apps/me/agents",
+    "fields": ["key", "agent_id", "name", "description", "avatar", "is_default"],
+    "serverOnlyFields": ["agent_id"],
+    "onlyEnabled": true
+  },
+  "proxy": {
+    "$comment": "As rotas do próprio scaffold. A tela fala com estas; só elas falam com a plataforma.",
+    "roster": "GET /api/volund/agents",
+    "conversation": "POST /api/volund/agents/{key}/stream",
+    "approval": "POST /api/volund/approvals/{id}/decide",
+    "question": "POST /api/volund/questions/answer",
+    "ownFrame": {
+      "$comment": "Emitido pelo proxy quando a falha é do CANAL, e não do agente. Fica DE FORA da união VolundEvent de propósito: `run_finished status:\"failed\"` diria que o agente falhou, e ele pode ter terminado bem do outro lado.",
+      "type": "channel_error",
+      "fields": ["type", "message"]
+    }
+  }
+}

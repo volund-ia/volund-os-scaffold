@@ -9,15 +9,17 @@ dependências.
 
 ## O que vem pronto
 
-|               |                                                                 |
-| ------------- | --------------------------------------------------------------- |
-| Aplicação     | Next.js (App Router), React 19, Tailwind v4                     |
-| Banco         | `pg` com pool único em `lib/db.ts`, conexão por `DATABASE_URL`  |
-| Validação     | `zod` + helpers de fronteira em `lib/validation.ts`             |
-| Interface     | **shadcn/ui** (sobre Base UI), 14 componentes base + CLI local  |
-| Estados de UI | `error.tsx`, `not-found.tsx`, `loading.tsx`                     |
-| Qualidade     | ESLint, Prettier, `tsc` estrito, testes com `node:test` + `tsx` |
-| Convenção     | `AGENTS.md` com as regras que o agente segue neste repositório  |
+|                |                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------- |
+| Aplicação      | Next.js (App Router), React 19, Tailwind v4                                        |
+| Banco          | `pg` com pool único em `lib/db.ts`, conexão por `DATABASE_URL`                     |
+| Autenticação   | OIDC da plataforma, sessão selada em cookie — sem cadastro próprio                 |
+| Agentes do app | chat pronto em `/agentes`, em nome de **quem está conversando** (sem chave de API) |
+| Validação      | `zod` + helpers de fronteira em `lib/validation.ts`                                |
+| Interface      | **shadcn/ui** (sobre Base UI), 14 componentes base + CLI local                     |
+| Estados de UI  | `error.tsx`, `not-found.tsx`, `loading.tsx`                                        |
+| Qualidade      | ESLint, Prettier, `tsc` estrito, testes com `node:test` + `tsx`                    |
+| Convenção      | `AGENTS.md` com as regras que o agente segue neste repositório                     |
 
 ## Comandos
 
