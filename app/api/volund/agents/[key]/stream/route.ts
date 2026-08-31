@@ -99,6 +99,7 @@ export async function POST(
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         let aberto = true;
+        /** Escreve um quadro SSE, se ainda houver alguém do outro lado. */
         const enviar = (
           payload: VolundEvent | { type: "channel_error"; message: string },
         ) => {

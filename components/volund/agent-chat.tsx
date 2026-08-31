@@ -80,6 +80,10 @@ interface CardDePergunta {
 
 type Pausa = { tipo: "aprovacao"; id: string } | { tipo: "credencial" } | null;
 
+/**
+ * A conversa em si. Recebe o roteiro pronto do servidor e daqui para baixo é
+ * tudo cliente — conversa é interação.
+ */
 export function AgentChat({ agents }: { agents: AppAgent[] }) {
   const [selecionado, setSelecionado] = useState(
     () => (agents.find((a) => a.isDefault) ?? agents[0])?.key ?? "",
@@ -266,6 +270,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
     [enviando, selecionado],
   );
 
+  /** Manda as escolhas da pessoa. O card só sai da tela se elas chegarem. */
   async function responderCard(perguntaId: string, respostas: Record<string, string>) {
     setDecidindo(true);
     try {
@@ -285,6 +290,10 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
     }
   }
 
+  /**
+   * Diz que a pessoa não quis escolher. O agente segue com a melhor decisão
+   * possível em vez de esperar até desistir sozinho, com a tela parada.
+   */
   async function pularCard(perguntaId: string) {
     setDecidindo(true);
     try {
@@ -307,6 +316,11 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
     }
   }
 
+  /**
+   * Libera ou recusa a ferramenta que pausou o agente. A retomada acontece do
+   * outro lado e NÃO volta por esta conexão, que já fechou — daí a frase que
+   * fica na tela dizendo o que esperar.
+   */
   async function decidir(id: string, decisao: "aprovar" | "recusar") {
     setDecidindo(true);
     try {
@@ -454,6 +468,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   );
 }
 
+/** O que a tela mostra antes da primeira mensagem: quem é o agente e o que ele faz. */
 function EstadoVazio({ agente }: { agente: AppAgent | undefined }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
@@ -482,6 +497,7 @@ function Escrevendo() {
   );
 }
 
+/** Recado de erro ou de pausa. Mesma caixa para os dois, para não competirem. */
 function Aviso({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-border-subtle bg-surface-elevated text-muted-foreground flex items-start gap-2 rounded-[14px] border p-3.5 text-[13px] leading-[1.6]">
@@ -491,6 +507,10 @@ function Aviso({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * O card que o agente abriu, com as opções dele. O turno CONTINUA quando a
+ * resposta chega — por isso ele aparece no meio da conversa em vez de encerrá-la.
+ */
 function CardPergunta({
   card,
   ocupado,
@@ -589,6 +609,10 @@ function CardPergunta({
   );
 }
 
+/**
+ * O pedido de liberação. Aqui o stream já FECHOU: o agente parou esperando uma
+ * decisão, e é ela que o retoma.
+ */
 function CardAprovacao({
   id,
   ocupado,

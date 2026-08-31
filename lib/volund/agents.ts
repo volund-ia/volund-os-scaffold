@@ -232,6 +232,12 @@ export async function exchangeForPlatformToken(
   return token;
 }
 
+/**
+ * Guarda o token trocado e mantém o teto do cache.
+ *
+ * A reinserção não é cosmética: ela é o que faz o descarte abaixo tirar sempre
+ * a entrada menos recente.
+ */
 function rememberToken(key: string, entry: CachedToken): void {
   tokenCache.delete(key);
   tokenCache.set(key, entry);
