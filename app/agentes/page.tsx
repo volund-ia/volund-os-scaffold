@@ -27,6 +27,11 @@ import { AgentChannelError, listAppAgents, type AppAgent } from "@/lib/volund/ag
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Renders the authenticated agents conversation page.
+ *
+ * @returns The agents page with the available assistants or an unavailable-state message.
+ */
 export default async function Agentes() {
   const session = await requireSession("/agentes");
 

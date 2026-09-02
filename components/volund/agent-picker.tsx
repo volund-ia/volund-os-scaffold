@@ -4,26 +4,13 @@ import type { AppAgent } from "@/lib/volund/agents";
 import { cn } from "@/lib/utils";
 
 /**
- * A escolha de com QUAL agente conversar.
+ * Renders an accessible agent selector when multiple agents are available.
  *
- * ## Ele some quando há um agente só
+ * The selector displays each agent's initials and name, marks the selected
+ * agent, and hides itself when zero or one agent is available.
  *
- * E é o ponto do componente. O App suporta vários agentes desde o primeiro dia,
- * mas a maioria vai ter um — e um seletor com uma opção é um controle que pede
- * uma decisão que não existe. Quem tem um agente não vê nada; quem vincula o
- * segundo ganha a escolha sem ninguém mexer em código.
- *
- * ## Iniciais, e não a imagem do agente
- *
- * O `avatar` do roteiro é um **slug** (`"assistant"`), e não um endereço de
- * imagem: quem sabe desenhá-lo é o painel do VolundOS, que tem o conjunto de
- * ilustrações. Aqui ele não resolve para nada, e tratá-lo como URL renderizaria
- * uma imagem quebrada — o campo continua sendo entregue no tipo porque faz parte
- * do contrato, não porque esta tela saiba usá-lo.
- *
- * As iniciais funcionam em qualquer implantação, não dependem de a rede
- * responder e não pedem nenhuma decisão sobre de onde a aplicação aceita
- * carregar imagem.
+ * @param selecionado - The key of the currently selected agent.
+ * @returns The agent selector, or `null` when there is at most one agent.
  */
 export function AgentPicker({
   agents,
@@ -77,7 +64,12 @@ export function AgentPicker({
   );
 }
 
-/** Até duas iniciais. Um nome de uma palavra rende uma; vazio rende o traço. */
+/**
+ * Formats a name as up to two uppercase initials.
+ *
+ * @param nome - The name from which to derive initials
+ * @returns The initials, or `—` when the name is empty
+ */
 function iniciais(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);
   if (partes.length === 0) return "—";

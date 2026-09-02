@@ -63,6 +63,13 @@ const corpo = z.object({
 /** Intervalo do batimento que mantém a conexão viva durante um silêncio longo. */
 const PING_MS = 15_000;
 
+/**
+ * Starts or continues an agent conversation and streams its events over Server-Sent Events.
+ *
+ * @param request - The request containing the conversation input and optional conversation ID.
+ * @param ctx - The route context containing the agent key.
+ * @returns A response containing the agent event stream or an appropriate authentication, validation, or error response.
+ */
 export async function POST(
   request: Request,
   ctx: { params: Promise<{ key: string }> },

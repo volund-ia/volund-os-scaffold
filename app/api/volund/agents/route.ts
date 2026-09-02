@@ -28,6 +28,11 @@ import { agentChannelResponse } from "@/lib/volund/channel-http";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Lists the agents available to the authenticated application.
+ *
+ * @returns A JSON response containing the available agents, or the response produced by authentication or error handling.
+ */
 export async function GET() {
   const gate = await guard();
   if (!gate.ok) return gate.response;

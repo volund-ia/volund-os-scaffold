@@ -10,11 +10,10 @@
 import { AgentChannelError } from "./agents";
 
 /**
- * `409`, e não `500`, para `sem_agente`.
+ * Translates agent-channel failures into HTTP responses.
  *
- * Não é falha do servidor: é o App num estado legítimo que ainda não foi
- * configurado. O `5xx` mandaria a tela dizer "tente de novo", e tentar de novo é
- * exatamente o que não resolve — o que resolve é alguém vincular um agente.
+ * @param err - The failure raised by the agent channel
+ * @returns A JSON response with the agent-channel error and an HTTP 409 or 503 status
  */
 export function agentChannelResponse(err: unknown): Response {
   if (err instanceof AgentChannelError) {
