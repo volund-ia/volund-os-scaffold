@@ -311,10 +311,32 @@ test("a confirmação de cópia cancela o prazo anterior", () => {
   // confirmação do segundo. Apontado na revisão.
   const bloco = ler(BLOCO);
   const botao = bloco.slice(bloco.indexOf("function BotaoCopiar"));
-  assert.match(botao.slice(0, 1200), /clearTimeout\(prazo\.current\)/);
+
+  // A janela vai de `setCopiado(true)` até a criação do prazo novo. Medido: uma
+  // janela mais larga passava VERDE com o cancelamento removido do clique,
+  // porque o `clearTimeout` da limpeza do `useEffect` está no mesmo componente
+  // e a asserção lia o vizinho. O que importa é o cancelamento estar ENTRE a
+  // confirmação e o prazo seguinte.
+  const iConfirma = botao.indexOf("setCopiado(true)");
+  const iNovoPrazo = botao.indexOf("prazo.current = setTimeout");
+  assert.ok(
+    iConfirma > 0 && iNovoPrazo > iConfirma,
+    "o corpo do clique mudou de forma",
+  );
+  assert.match(
+    botao.slice(iConfirma, iNovoPrazo),
+    /clearTimeout\(prazo\.current\)/,
+    "o prazo anterior não é cancelado antes de o próximo nascer",
+  );
+
   // E a limpeza na desmontagem, que evita `setState` em componente fora da tela
-  // quando o bloco é fechado antes de o prazo vencer.
-  assert.match(botao.slice(0, 1200), /useEffect\(/);
+  // quando o bloco é fechado antes de o prazo vencer. Ela vive no `useEffect`,
+  // ANTES do corpo do clique.
+  assert.match(
+    botao.slice(0, iConfirma),
+    /useEffect\([\s\S]*clearTimeout\(prazo\.current\)/,
+    "sumiu a limpeza na desmontagem",
+  );
 });
 
 test("anexo ilegível não é reportado como queda de conexão", () => {
