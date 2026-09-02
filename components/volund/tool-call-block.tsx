@@ -9,7 +9,7 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -82,6 +82,22 @@ function comoTexto(valor: unknown): string | null {
 
 function BotaoCopiar({ texto }: { texto: string }) {
   const [copiado, setCopiado] = useState(false);
+  /**
+   * O prazo da confirmação, em `ref` para poder ser CANCELADO.
+   *
+   * Dois cliques dentro de 1,6 s deixavam o primeiro temporizador apagar a
+   * confirmação do segundo: o ícone voltava a "copiar" logo depois de a pessoa
+   * ter copiado. Apontado na revisão. A limpeza na desmontagem vem junto, e
+   * evita um `setState` em componente que já saiu da tela quando o bloco fecha.
+   */
+  const prazo = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (prazo.current) clearTimeout(prazo.current);
+    },
+    [],
+  );
 
   return (
     <button
@@ -90,7 +106,8 @@ function BotaoCopiar({ texto }: { texto: string }) {
         try {
           await navigator.clipboard.writeText(texto);
           setCopiado(true);
-          setTimeout(() => setCopiado(false), 1600);
+          if (prazo.current) clearTimeout(prazo.current);
+          prazo.current = setTimeout(() => setCopiado(false), 1600);
         } catch {
           // Sem permissão de área de transferência. Silenciar é melhor que um
           // erro sobre algo que a pessoa pode resolver selecionando o texto.

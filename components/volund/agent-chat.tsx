@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { AppAgent } from "@/lib/volund/agents";
 import {
   ACEITA,
+  AnexoIlegivelError,
   avaliarAnexo,
   LIMITE_DE_ARQUIVOS,
   prepararAnexos,
@@ -348,6 +349,13 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
         // por cima. Mostrar "a conexão caiu" aí seria acusar defeito de uma
         // coisa que a própria pessoa fez.
         if (err instanceof DOMException && err.name === "AbortError") return;
+        // Um anexo que não abre não é queda de conexão, e dizer que é manda a
+        // pessoa tentar de novo o mesmo arquivo ilegível. A mensagem nomeia o
+        // arquivo. Apontado na revisão.
+        if (err instanceof AnexoIlegivelError) {
+          setErro(err.message);
+          return;
+        }
         console.error("[volund] falha ao conversar:", err);
         setErro("A conexão caiu no meio da resposta. Tente enviar de novo.");
       } finally {

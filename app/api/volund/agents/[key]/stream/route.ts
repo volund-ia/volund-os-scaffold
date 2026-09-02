@@ -55,19 +55,26 @@ export const maxDuration = 800;
 /**
  * Um anexo, no formato que o SDK aceita (`VolundFileInput`).
  *
- * União exclusiva de propósito: a plataforma recusa um item que traga `url` e
- * `data` juntos, e recusar aqui devolve a frase certa em vez de repassar o erro
- * dela. O scaffold só produz `data`, mas `url` fica aberto porque um App que
- * ganhe um lugar para hospedar arquivo passa a poder usá-lo sem mexer nesta
- * rota — é o caminho para ultrapassar o teto do corpo (ver
- * `lib/volund/attachments.ts`).
+ * União exclusiva, e `strictObject` é o que a torna exclusiva de verdade.
+ *
+ * `z.object` DESCARTA chave desconhecida em silêncio. Medido: um item com `url`
+ * e `data` juntos casava com o primeiro membro, o `data` sumia, e a rota
+ * encaminhava só a URL — o conteúdo inline nem entrava na conta do peso. A
+ * intenção estava escrita aqui e o código fazia outra coisa; agora o item com
+ * as duas chaves é recusado, que é o que esta frase sempre prometeu. Apontado
+ * na revisão.
+ *
+ * O scaffold só produz `data`, mas `url` fica aberto porque um App que ganhe um
+ * lugar para hospedar arquivo passa a poder usá-lo sem mexer nesta rota — é o
+ * caminho para ultrapassar o teto do corpo (ver `lib/volund/attachments.ts`).
  */
 const anexo = z.union([
-  z.object({
-    url: z.string().url("O endereço do anexo não é válido."),
+  z.strictObject({
+    // `z.url()` — em Zod 4 o `z.string().url()` está depreciado.
+    url: z.url("O endereço do anexo não é válido."),
     name: z.string().min(1).max(300).optional(),
   }),
-  z.object({
+  z.strictObject({
     data: z.string().min(1, "O anexo chegou vazio."),
     name: z.string().min(1).max(300).optional(),
     mime: z.string().min(1).max(200).optional(),

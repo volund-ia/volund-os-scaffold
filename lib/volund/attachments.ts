@@ -204,15 +204,40 @@ export function paraBase64(buffer: ArrayBuffer): string {
   return btoa(bruto);
 }
 
+/**
+ * Não deu para ler um arquivo escolhido.
+ *
+ * Existe para separar esta falha da queda de conexão. `arrayBuffer()` pode
+ * rejeitar DEPOIS da escolha — o caso comum é o arquivo ser movido ou apagado
+ * do disco entre escolher e enviar, o que produz `NotReadableError`. Sem um
+ * erro próprio, a rejeição chegava ao `catch` genérico do envio e a pessoa lia
+ * "a conexão caiu no meio da resposta": causa errada, e ela tentaria de novo o
+ * mesmo arquivo ilegível. Apontado na revisão.
+ */
+export class AnexoIlegivelError extends Error {
+  readonly nome: string;
+  constructor(nome: string) {
+    super(`Não consegui ler “${nome}”. Ele pode ter sido movido ou apagado.`);
+    this.name = "AnexoIlegivelError";
+    this.nome = nome;
+  }
+}
+
 /** Converte os anexos escolhidos no que o SDK aceita. */
 export async function prepararAnexos(
   escolhidos: readonly AnexoEscolhido[],
 ): Promise<AnexoParaEnvio[]> {
   return Promise.all(
-    escolhidos.map(async (a) => ({
-      data: paraBase64(await a.arquivo.arrayBuffer()),
-      name: a.nome,
-      mime: a.mime,
-    })),
+    escolhidos.map(async (a) => {
+      let buffer: ArrayBuffer;
+      try {
+        buffer = await a.arquivo.arrayBuffer();
+      } catch {
+        // O nome vai junto: "não consegui ler um dos anexos" obrigaria a pessoa
+        // a descobrir qual, removendo um por um.
+        throw new AnexoIlegivelError(a.nome);
+      }
+      return { data: paraBase64(buffer), name: a.nome, mime: a.mime };
+    }),
   );
 }

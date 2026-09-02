@@ -122,9 +122,18 @@ export function AgentMarkdown({
           // véu (a regra abaixo em `code` só se aplica quando ele está solto).
           pre: ({ children }) => (
             <pre
+              // Rolador alcançável pelo teclado. Um `overflow-x-auto` não recebe
+              // foco por si: quem navega sem mouse não consegue rolar, e o
+              // trecho que passa da largura fica inacessível. `tabIndex` põe a
+              // região na ordem de tabulação; o rótulo diz o que ela é quando o
+              // foco chega nela. Apontado na revisão.
+              tabIndex={0}
+              role="region"
+              aria-label="Bloco de código"
               className={cn(
                 "bg-surface-interactive border-border-subtle overflow-x-auto rounded-[10px] border p-3",
                 "text-[12px] leading-[1.6]",
+                "focus-visible:ring-ring/50 outline-none focus-visible:ring-3",
                 MONO,
                 "[&_code]:bg-transparent [&_code]:p-0 [&_code]:text-[12px] [&_code]:text-inherit",
               )}
@@ -147,9 +156,18 @@ export function AgentMarkdown({
             </code>
           ),
 
-          // Tabela larga não pode empurrar a bolha: o rolador é dela.
+          // Tabela larga não pode empurrar a bolha: o rolador é dela — e ele
+          // precisa receber foco pelo mesmo motivo do `pre` acima.
           table: ({ children }) => (
-            <div className="border-border-subtle overflow-x-auto rounded-[10px] border">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Tabela"
+              className={cn(
+                "border-border-subtle overflow-x-auto rounded-[10px] border",
+                "focus-visible:ring-ring/50 outline-none focus-visible:ring-3",
+              )}
+            >
               <table className="w-full border-collapse text-[13px]">{children}</table>
             </div>
           ),

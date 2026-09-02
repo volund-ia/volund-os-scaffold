@@ -258,3 +258,77 @@ test("o chat envia os anexos junto da mensagem", () => {
   // o estado depois da leitura dos arquivos pegaria a lista já vazia.
   assert.match(chat, /const paraEnviar = anexos;/);
 });
+
+// ---------------------------------------------------------------------------
+// Os quatro reparos da revisão
+// ---------------------------------------------------------------------------
+
+test("a união de anexo é exclusiva DE VERDADE, e não só na intenção", () => {
+  // `z.object` descarta chave desconhecida em silêncio: um item com `url` e
+  // `data` casava com o primeiro membro, o `data` sumia, e a rota encaminhava
+  // só a URL — sem o conteúdo entrar na conta do peso. O comentário no arquivo
+  // já prometia recusa; o código é que não cumpria. Apontado na revisão.
+  const rota = ler(ROTA);
+  const uniao = rota.slice(rota.indexOf("const anexo = z.union"));
+  const corpo = uniao.slice(0, uniao.indexOf("]);"));
+
+  assert.doesNotMatch(
+    corpo,
+    /z\.object\(/,
+    "voltou a usar z.object, que descarta chave desconhecida em silêncio",
+  );
+  // Os DOIS membros: um só estrito deixaria o outro lado da união permissivo.
+  assert.equal(
+    (corpo.match(/z\.strictObject\(/g) ?? []).length,
+    2,
+    "os dois membros da união precisam ser estritos",
+  );
+});
+
+test("as regiões que rolam recebem foco pelo teclado", () => {
+  // Um `overflow-x-auto` não é focável por si. Quando a tabela ou o bloco de
+  // código passam da largura da bolha, quem navega sem mouse não alcança o
+  // resto. Apontado na revisão.
+  const md = ler(MARKDOWN);
+
+  for (const [elemento, rotulo] of [
+    ["pre", "Bloco de código"],
+    ["table", "Tabela"],
+  ] as const) {
+    const trecho = mapeamentoDe(md, elemento);
+    assert.match(trecho, /overflow-x-auto/, `${elemento} deixou de rolar`);
+    assert.match(trecho, /tabIndex=\{0\}/, `${elemento} não recebe foco`);
+    assert.match(
+      trecho,
+      new RegExp(`aria-label="${rotulo}"`),
+      `${elemento} sem rótulo`,
+    );
+  }
+});
+
+test("a confirmação de cópia cancela o prazo anterior", () => {
+  // Dois cliques dentro de 1,6 s deixavam o primeiro temporizador apagar a
+  // confirmação do segundo. Apontado na revisão.
+  const bloco = ler(BLOCO);
+  const botao = bloco.slice(bloco.indexOf("function BotaoCopiar"));
+  assert.match(botao.slice(0, 1200), /clearTimeout\(prazo\.current\)/);
+  // E a limpeza na desmontagem, que evita `setState` em componente fora da tela
+  // quando o bloco é fechado antes de o prazo vencer.
+  assert.match(botao.slice(0, 1200), /useEffect\(/);
+});
+
+test("anexo ilegível não é reportado como queda de conexão", () => {
+  const chat = ler(CHAT);
+  const captura = chat.slice(chat.indexOf("} catch (err) {"));
+  const janela = captura.slice(0, 900);
+
+  // A checagem específica tem de vir ANTES da frase genérica; depois dela o
+  // `return` nunca seria alcançado e a pessoa leria a causa errada.
+  const iEspecifico = janela.indexOf("AnexoIlegivelError");
+  const iGenerico = janela.indexOf("A conexão caiu no meio da resposta");
+  assert.ok(iEspecifico > 0, "o chat não distingue anexo ilegível");
+  assert.ok(
+    iEspecifico < iGenerico,
+    "a frase genérica vem antes e engole o caso do anexo",
+  );
+});

@@ -22,6 +22,7 @@ import { test } from "node:test";
 
 import {
   ACEITA,
+  AnexoIlegivelError,
   LIMITE_DE_ARQUIVOS,
   LIMITE_POR_ARQUIVO_BYTES,
   LIMITE_TOTAL_BYTES,
@@ -229,4 +230,67 @@ test("tamanho legível fala português, não bytes crus", () => {
   assert.equal(tamanhoLegivel(2048), "2 KB");
   // Vírgula, não ponto: o número aparece numa frase em português.
   assert.match(tamanhoLegivel(1024 * 1024 * 2.5), /2,5 MB/);
+});
+
+// ---------------------------------------------------------------------------
+// Leitura que falha depois da escolha
+// ---------------------------------------------------------------------------
+
+test("arquivo ilegível dá um erro PRÓPRIO, com o nome, e não queda de conexão", async () => {
+  // `arrayBuffer()` pode rejeitar depois da escolha — o caso comum é o arquivo
+  // ser movido ou apagado entre escolher e enviar. Sem um erro próprio, a
+  // rejeição caía no `catch` genérico do envio e a pessoa lia "a conexão caiu",
+  // que aponta a causa errada e a faz tentar de novo o mesmo arquivo.
+  const quebrado = {
+    name: "sumiu.png",
+    type: "image/png",
+    size: 10,
+    arrayBuffer: () => Promise.reject(new Error("NotReadableError")),
+  } as unknown as File;
+
+  const escolhido: AnexoEscolhido = {
+    id: "z",
+    nome: "sumiu.png",
+    tamanho: 10,
+    mime: "image/png",
+    arquivo: quebrado,
+  };
+
+  await assert.rejects(
+    () => prepararAnexos([escolhido]),
+    (err: unknown) => {
+      assert.ok(err instanceof AnexoIlegivelError, "veio um erro genérico");
+      // O NOME no erro: "não consegui ler um dos anexos" obrigaria a pessoa a
+      // descobrir qual, removendo um por um.
+      assert.equal(err.nome, "sumiu.png");
+      assert.match(err.message, /sumiu\.png/);
+      return true;
+    },
+  );
+});
+
+test("um anexo ilegível no meio não é confundido com os que leem bem", async () => {
+  // Armado com um bom ANTES do quebrado: se a implementação parasse no primeiro
+  // erro sem nomear, o caso não distinguiria qual falhou.
+  const bom: AnexoEscolhido = {
+    id: "a",
+    nome: "ok.png",
+    tamanho: 3,
+    mime: "image/png",
+    arquivo: new File([new Uint8Array([1, 2, 3])], "ok.png", { type: "image/png" }),
+  };
+  const ruim: AnexoEscolhido = {
+    id: "b",
+    nome: "quebrado.pdf",
+    tamanho: 4,
+    mime: "application/pdf",
+    arquivo: {
+      arrayBuffer: () => Promise.reject(new Error("NotReadableError")),
+    } as unknown as File,
+  };
+
+  await assert.rejects(
+    () => prepararAnexos([bom, ruim]),
+    (err: unknown) => err instanceof AnexoIlegivelError && err.nome === "quebrado.pdf",
+  );
 });
