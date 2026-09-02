@@ -247,6 +247,24 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
           ),
         );
 
+      /**
+       * Devolve os anexos à lista quando o envio não foi adiante.
+       *
+       * A lista é limpa ANTES do `fetch`, para a tela responder na hora. Se a
+       * requisição falha, o aviso diz "tente enviar de novo" — e sem isto os
+       * arquivos já não estão mais lá. Não é só incômodo: só o `File` em
+       * `paraEnviar` referencia o conteúdo, então não há como a pessoa
+       * recuperá-los senão escolhendo tudo de novo, e nada na tela diz isso.
+       *
+       * NÃO vale para o cancelamento: abortar é pedido nosso — a pessoa mandou
+       * outra mensagem por cima ou saiu da tela —, e devolver os anexos ali
+       * plantaria os arquivos da mensagem velha no envio novo. Apontado na
+       * revisão.
+       */
+      const devolverAnexos = () => {
+        if (paraEnviar.length > 0) setAnexos(paraEnviar);
+      };
+
       try {
         // Um envio de cada vez: se ainda houver outro em voo, ele perdeu a vez.
         emVoo.current?.abort();
@@ -278,6 +296,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
             message?: string;
           } | null;
           setErro(corpo?.message ?? "Não consegui falar com o assistente agora.");
+          devolverAnexos();
           descartarBolhaVazia();
           return;
         }
@@ -354,10 +373,12 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
         // arquivo. Apontado na revisão.
         if (err instanceof AnexoIlegivelError) {
           setErro(err.message);
+          devolverAnexos();
           return;
         }
         console.error("[volund] falha ao conversar:", err);
         setErro("A conexão caiu no meio da resposta. Tente enviar de novo.");
+        devolverAnexos();
       } finally {
         setEnviando(false);
       }

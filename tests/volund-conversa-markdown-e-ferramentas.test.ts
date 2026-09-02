@@ -354,3 +354,31 @@ test("anexo ilegível não é reportado como queda de conexão", () => {
     "a frase genérica vem antes e engole o caso do anexo",
   );
 });
+
+test("envio que falha devolve os anexos, e o cancelamento não", () => {
+  // A lista é limpa antes do `fetch` para a tela responder na hora. Se a
+  // requisição falha, o aviso diz "tente enviar de novo" — e sem devolver, os
+  // arquivos já não estão lá. Só o `File` em `paraEnviar` referencia o
+  // conteúdo, então não há como recuperá-los senão escolhendo tudo de novo.
+  // Apontado na revisão, como nitpick no corpo.
+  const chat = ler(CHAT);
+  assert.match(chat, /const devolverAnexos = \(\) => \{/);
+
+  const captura = chat.slice(chat.indexOf("} catch (err) {"));
+  const janela = captura.slice(0, 1200);
+
+  // Cancelar é pedido nosso — a pessoa mandou outra mensagem por cima ou saiu
+  // da tela. Devolver ali plantaria os arquivos da mensagem velha no envio
+  // novo, então a devolução tem de vir DEPOIS da checagem de AbortError.
+  const iAbort = janela.indexOf("AbortError");
+  const iDevolve = janela.indexOf("devolverAnexos()");
+  assert.ok(iAbort > 0 && iDevolve > iAbort, "o cancelamento devolveria os anexos");
+
+  // E o caminho da resposta ruim (o 413 do teto, por exemplo) também devolve.
+  const respostaRuim = chat.slice(chat.indexOf("if (!resposta.ok"));
+  assert.match(
+    respostaRuim.slice(0, 500),
+    /devolverAnexos\(\)/,
+    "resposta ruim perde os anexos",
+  );
+});
