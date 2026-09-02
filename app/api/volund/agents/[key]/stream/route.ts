@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import { guard } from "@/lib/auth/server";
 import { parseJsonBody, validationResponse } from "@/lib/validation";
+import {
+  LIMITE_DE_ARQUIVOS,
+  LIMITE_TOTAL_BYTES,
+  tamanhoLegivel,
+} from "@/lib/volund/attachments";
 import { resolveAgentId, volundFor } from "@/lib/volund/agents";
 import { agentChannelResponse } from "@/lib/volund/channel-http";
 
@@ -47,6 +52,28 @@ export const dynamic = "force-dynamic";
  */
 export const maxDuration = 800;
 
+/**
+ * Um anexo, no formato que o SDK aceita (`VolundFileInput`).
+ *
+ * União exclusiva de propósito: a plataforma recusa um item que traga `url` e
+ * `data` juntos, e recusar aqui devolve a frase certa em vez de repassar o erro
+ * dela. O scaffold só produz `data`, mas `url` fica aberto porque um App que
+ * ganhe um lugar para hospedar arquivo passa a poder usá-lo sem mexer nesta
+ * rota — é o caminho para ultrapassar o teto do corpo (ver
+ * `lib/volund/attachments.ts`).
+ */
+const anexo = z.union([
+  z.object({
+    url: z.string().url("O endereço do anexo não é válido."),
+    name: z.string().min(1).max(300).optional(),
+  }),
+  z.object({
+    data: z.string().min(1, "O anexo chegou vazio."),
+    name: z.string().min(1).max(300).optional(),
+    mime: z.string().min(1).max(200).optional(),
+  }),
+]);
+
 const corpo = z.object({
   input: z.string().min(1, "Escreva alguma coisa.").max(20_000),
   /**
@@ -58,7 +85,27 @@ const corpo = z.object({
    * que divergiria da primeira.
    */
   conversaId: z.string().min(1).max(200).optional(),
+  /**
+   * Os anexos da mensagem.
+   *
+   * O limite de quantidade está aqui, e não só na tela, porque a tela é
+   * conveniência: esta rota atende qualquer cliente que saiba o endereço, e um
+   * teto que vive só no navegador não é um teto.
+   */
+  files: z.array(anexo).max(LIMITE_DE_ARQUIVOS).optional(),
 });
+
+/**
+ * Quantos bytes de conteúdo um base64 representa.
+ *
+ * Serve para conferir o peso REAL do que chegou, e não o número que o cliente
+ * disse. Cada 4 caracteres carregam 3 bytes, menos o preenchimento com `=`.
+ */
+function bytesDoBase64(data: string): number {
+  const limpo = data.includes(",") ? data.slice(data.indexOf(",") + 1) : data;
+  const preenchimento = limpo.endsWith("==") ? 2 : limpo.endsWith("=") ? 1 : 0;
+  return Math.floor((limpo.length * 3) / 4) - preenchimento;
+}
 
 /** Intervalo do batimento que mantém a conexão viva durante um silêncio longo. */
 const PING_MS = 15_000;
@@ -75,6 +122,25 @@ export async function POST(
   const parsed = await parseJsonBody(request, corpo);
   if (!parsed.ok) return validationResponse(parsed);
 
+  const files = parsed.data.files ?? [];
+
+  // O peso conferido no conteúdo que chegou, não no que o cliente afirmou. Um
+  // envio acima do teto do corpo costuma ser cortado pela hospedagem antes de
+  // chegar aqui; quando chega, a recusa precisa dizer o motivo em vez de
+  // deixar a plataforma responder por um erro que não é dela.
+  const pesoInline = files.reduce(
+    (total, f) => total + ("data" in f ? bytesDoBase64(f.data) : 0),
+    0,
+  );
+  if (pesoInline > LIMITE_TOTAL_BYTES) {
+    return Response.json(
+      {
+        message: `Somados, os anexos passam de ${tamanhoLegivel(LIMITE_TOTAL_BYTES)}. Envie em duas mensagens.`,
+      },
+      { status: 413 },
+    );
+  }
+
   try {
     // Resolvido mesmo na continuação: o apelido faz parte do endereço, e um
     // endereço que aponta para um agente que o App não oferece deve responder
@@ -82,15 +148,21 @@ export async function POST(
     const { agentId } = await resolveAgentId(gate.session, key);
     const volund = await volundFor(gate.session);
 
+    // `files` só entra quando existe: o SDK aceita a chave ausente, e mandar
+    // uma lista vazia faria a plataforma abrir o caminho de anexos para nada.
+    const comAnexos = files.length > 0 ? { files } : {};
+
     const run = parsed.data.conversaId
       ? await volund.agents.continue({
           runId: parsed.data.conversaId,
           input: parsed.data.input,
+          ...comAnexos,
           signal: request.signal,
         })
       : await volund.agents.run({
           agentId,
           input: parsed.data.input,
+          ...comAnexos,
           signal: request.signal,
         });
 
