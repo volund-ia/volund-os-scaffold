@@ -382,3 +382,34 @@ test("envio que falha devolve os anexos, e o cancelamento não", () => {
     "resposta ruim perde os anexos",
   );
 });
+
+test("a rota impõe as DUAS regras de tamanho, não só a soma", () => {
+  // `LIMITE_POR_ARQUIVO_BYTES` é 75% do total: um arquivo sozinho podia passar
+  // do teto individual e ainda ficar abaixo da soma. Quem chamasse a rota
+  // direto contornava a regra que a tela aplica — e metade das regras no
+  // servidor não é validação de servidor. Apontado na revisão, fora do diff.
+  const rota = ler(ROTA);
+  const bloco = rota.slice(rota.indexOf("const files = parsed.data.files"));
+  const janela = bloco.slice(0, bloco.indexOf("try {"));
+
+  assert.match(
+    janela,
+    /peso > LIMITE_POR_ARQUIVO_BYTES/,
+    "a rota não confere o teto por arquivo",
+  );
+  assert.match(
+    janela,
+    /pesoInline > LIMITE_TOTAL_BYTES/,
+    "a rota não confere o teto do envio",
+  );
+
+  // A recusa por arquivo vem ANTES de somar: acumular primeiro e recusar depois
+  // daria a frase da soma para um caso que é de arquivo único.
+  const iPorArquivo = janela.indexOf("peso > LIMITE_POR_ARQUIVO_BYTES");
+  const iSoma = janela.indexOf("pesoInline > LIMITE_TOTAL_BYTES");
+  assert.ok(iPorArquivo < iSoma, "a soma decide antes da regra por arquivo");
+
+  // E a frase nomeia o arquivo quando o nome veio — sem ele a pessoa não sabe
+  // qual dos cinco remover.
+  assert.match(janela, /f\.name \? /, "a recusa por arquivo não nomeia o arquivo");
+});

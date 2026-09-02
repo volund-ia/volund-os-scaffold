@@ -5,6 +5,7 @@ import { guard } from "@/lib/auth/server";
 import { parseJsonBody, validationResponse } from "@/lib/validation";
 import {
   LIMITE_DE_ARQUIVOS,
+  LIMITE_POR_ARQUIVO_BYTES,
   LIMITE_TOTAL_BYTES,
   tamanhoLegivel,
 } from "@/lib/volund/attachments";
@@ -135,10 +136,28 @@ export async function POST(
   // envio acima do teto do corpo costuma ser cortado pela hospedagem antes de
   // chegar aqui; quando chega, a recusa precisa dizer o motivo em vez de
   // deixar a plataforma responder por um erro que não é dela.
-  const pesoInline = files.reduce(
-    (total, f) => total + ("data" in f ? bytesDoBase64(f.data) : 0),
-    0,
-  );
+  // As DUAS regras, e não só a soma. `LIMITE_POR_ARQUIVO_BYTES` é 75% do total,
+  // então um arquivo sozinho podia passar do teto individual e ainda ficar
+  // abaixo da soma — quem chamasse esta rota direto contornava a regra que a
+  // tela aplica. Metade das regras no servidor não é validação de servidor.
+  // Apontado na revisão.
+  let pesoInline = 0;
+  for (const f of files) {
+    if (!("data" in f)) continue;
+    const peso = bytesDoBase64(f.data);
+    if (peso > LIMITE_POR_ARQUIVO_BYTES) {
+      // O nome quando ele veio: sem ele a pessoa não sabe qual dos cinco
+      // remover. Sem nome, a frase se vira em vez de inventar um.
+      const qual = f.name ? `“${f.name}”` : "Um dos anexos";
+      return Response.json(
+        {
+          message: `${qual} passa de ${tamanhoLegivel(LIMITE_POR_ARQUIVO_BYTES)}, que é o limite por arquivo.`,
+        },
+        { status: 413 },
+      );
+    }
+    pesoInline += peso;
+  }
   if (pesoInline > LIMITE_TOTAL_BYTES) {
     return Response.json(
       {
