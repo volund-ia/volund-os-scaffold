@@ -216,15 +216,19 @@ test("os anexos chegam ao SDK na conversa nova E na continuação", () => {
   // na segunda — o pior tipo de defeito, porque parece funcionar.
   assert.match(rota, /const comAnexos = files\.length > 0 \? \{ files \} : \{\}/);
 
-  const continuacao = rota.slice(rota.indexOf("volund.agents.continue"));
-  assert.match(
-    continuacao.slice(0, 300),
-    /\.\.\.comAnexos/,
-    "continue não leva os anexos",
-  );
+  // A janela de cada chamada vai até onde a OUTRA começa, e não a um número de
+  // caracteres. Medido: com um `slice(0, 300)` a partir do `continue`, tirar o
+  // espalhamento de lá deixava o caso VERDE — a janela alcançava o bloco do
+  // `run`, que ainda tinha o seu, e a asserção lia o vizinho.
+  const iContinue = rota.indexOf("volund.agents.continue");
+  const iRun = rota.indexOf("volund.agents.run");
+  assert.ok(iContinue > 0 && iRun > iContinue, "as duas chamadas mudaram de lugar");
 
-  const novo = rota.slice(rota.indexOf("volund.agents.run"));
-  assert.match(novo.slice(0, 300), /\.\.\.comAnexos/, "run não leva os anexos");
+  const continuacao = rota.slice(iContinue, iRun);
+  assert.match(continuacao, /\.\.\.comAnexos/, "continue não leva os anexos");
+
+  const novo = rota.slice(iRun);
+  assert.match(novo, /\.\.\.comAnexos/, "run não leva os anexos");
 });
 
 test("o teto do envio é conferido no SERVIDOR, sobre o conteúdo que chegou", () => {
