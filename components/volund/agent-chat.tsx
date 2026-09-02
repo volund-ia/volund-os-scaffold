@@ -3,10 +3,9 @@
 import type { VolundEvent } from "@volund-ia/sdk";
 import {
   AlertTriangleIcon,
-  CheckIcon,
   Loader2Icon,
+  PaperclipIcon,
   SendIcon,
-  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -16,7 +15,18 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { AppAgent } from "@/lib/volund/agents";
+import {
+  ACEITA,
+  AnexoIlegivelError,
+  avaliarAnexo,
+  LIMITE_DE_ARQUIVOS,
+  prepararAnexos,
+  tamanhoLegivel,
+  type AnexoEscolhido,
+} from "@/lib/volund/attachments";
 import { AgentPicker } from "./agent-picker";
+import { AgentMarkdown } from "./agent-markdown";
+import { ToolCallBlock, type ChamadaDeFerramenta } from "./tool-call-block";
 
 /**
  * A conversa com um agente do App.
@@ -52,15 +62,16 @@ import { AgentPicker } from "./agent-picker";
  * competirem pela atenção — a pessoa lê o que ainda vai mudar.
  */
 
-interface Passo {
+type Mensagem =
+  | { tipo: "pessoa"; id: string; texto: string; anexos: AnexoNaBolha[] }
+  | { tipo: "agente"; id: string; texto: string; passos: ChamadaDeFerramenta[] };
+
+/** O anexo como a bolha da pessoa o mostra depois de enviado. */
+interface AnexoNaBolha {
   id: string;
   nome: string;
-  estado: "rodando" | "ok" | "erro";
+  tamanho: number;
 }
-
-type Mensagem =
-  | { tipo: "pessoa"; id: string; texto: string }
-  | { tipo: "agente"; id: string; texto: string; passos: Passo[] };
 
 interface Opcao {
   label: string;
@@ -95,6 +106,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
   const [card, setCard] = useState<CardDePergunta | null>(null);
   const [pausa, setPausa] = useState<Pausa>(null);
   const [decidindo, setDecidindo] = useState(false);
+  const [anexos, setAnexos] = useState<AnexoEscolhido[]>([]);
 
   /**
    * O identificador da conversa em andamento.
@@ -118,7 +130,48 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
    */
   const emVoo = useRef<AbortController | null>(null);
 
+  /** O `<input type="file">` escondido, acionado pelo botão de anexar. */
+  const campoDeArquivo = useRef<HTMLInputElement>(null);
+
   useEffect(() => () => emVoo.current?.abort(), []);
+
+  /**
+   * Põe na lista o que passar, e diz o que não passou.
+   *
+   * Um por um, e não em lote: quem escolhe cinco arquivos e tem um grande demais
+   * espera que os outros quatro entrem. Recusar o conjunto inteiro por causa de
+   * um obrigaria a pessoa a repetir a escolha sem saber qual era o problema.
+   *
+   * A recusa é avaliada contra a lista JÁ ACEITA nesta rodada, não contra a que
+   * estava na tela — sem isso, cinco arquivos pequenos escolhidos de uma vez
+   * passariam todos pelo teto da soma, que só vale para o que já entrou.
+   */
+  function escolherAnexos(lista: FileList | null) {
+    if (!lista || lista.length === 0) return;
+
+    // A conta roda FORA do updater do `setAnexos`. Um updater precisa ser puro:
+    // no modo estrito o React o invoca duas vezes para provar isso, e um
+    // `setErro` lá dentro seria disparado em dobro — além de tornar o resultado
+    // dependente de quantas vezes o React resolveu chamar a função.
+    const aceitos = [...anexos];
+    const recusas: string[] = [];
+
+    for (const arquivo of Array.from(lista)) {
+      const veredito = avaliarAnexo(arquivo, aceitos);
+      if (veredito.ok) aceitos.push(veredito.valor);
+      else recusas.push(veredito.motivo);
+    }
+
+    setAnexos(aceitos);
+    // A primeira recusa é a que a pessoa lê. Empilhar cinco frases num aviso
+    // faria o texto competir com a própria conversa.
+    setErro(recusas[0] ?? null);
+  }
+
+  function removerAnexo(id: string) {
+    setAnexos((atual) => atual.filter((a) => a.id !== id));
+    setErro(null);
+  }
 
   useEffect(() => {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -139,14 +192,29 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
       const limpo = texto.trim();
       if (!limpo || enviando || !selecionado) return;
 
+      // Congelados antes de qualquer `await`: a lista da tela é limpa logo
+      // abaixo, e ler `anexos` depois da leitura dos arquivos pegaria a lista
+      // já vazia — a mensagem sairia sem os anexos que a pessoa escolheu.
+      const paraEnviar = anexos;
+
       const idPessoa = crypto.randomUUID();
       const idAgente = crypto.randomUUID();
       setMensagens((atual) => [
         ...atual,
-        { tipo: "pessoa", id: idPessoa, texto: limpo },
+        {
+          tipo: "pessoa",
+          id: idPessoa,
+          texto: limpo,
+          anexos: paraEnviar.map((a) => ({
+            id: a.id,
+            nome: a.nome,
+            tamanho: a.tamanho,
+          })),
+        },
         { tipo: "agente", id: idAgente, texto: "", passos: [] },
       ]);
       setRascunho("");
+      setAnexos([]);
       setErro(null);
       setCard(null);
       setPausa(null);
@@ -179,11 +247,35 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
           ),
         );
 
+      /**
+       * Devolve os anexos à lista quando o envio não foi adiante.
+       *
+       * A lista é limpa ANTES do `fetch`, para a tela responder na hora. Se a
+       * requisição falha, o aviso diz "tente enviar de novo" — e sem isto os
+       * arquivos já não estão mais lá. Não é só incômodo: só o `File` em
+       * `paraEnviar` referencia o conteúdo, então não há como a pessoa
+       * recuperá-los senão escolhendo tudo de novo, e nada na tela diz isso.
+       *
+       * NÃO vale para o cancelamento: abortar é pedido nosso — a pessoa mandou
+       * outra mensagem por cima ou saiu da tela —, e devolver os anexos ali
+       * plantaria os arquivos da mensagem velha no envio novo. Apontado na
+       * revisão.
+       */
+      const devolverAnexos = () => {
+        if (paraEnviar.length > 0) setAnexos(paraEnviar);
+      };
+
       try {
         // Um envio de cada vez: se ainda houver outro em voo, ele perdeu a vez.
         emVoo.current?.abort();
         const controle = new AbortController();
         emVoo.current = controle;
+
+        // A leitura dos arquivos acontece aqui, e não na hora de escolher: ler
+        // no clique deixaria o conteúdo de vários megabytes na memória da aba
+        // enquanto a pessoa ainda escreve, e ela pode muito bem remover o anexo
+        // antes de enviar.
+        const files = paraEnviar.length > 0 ? await prepararAnexos(paraEnviar) : [];
 
         const resposta = await fetch(
           `/api/volund/agents/${encodeURIComponent(selecionado)}/stream`,
@@ -194,6 +286,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
             body: JSON.stringify({
               input: limpo,
               ...(conversaId.current ? { conversaId: conversaId.current } : {}),
+              ...(files.length > 0 ? { files } : {}),
             }),
           },
         );
@@ -203,6 +296,7 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
             message?: string;
           } | null;
           setErro(corpo?.message ?? "Não consegui falar com o assistente agora.");
+          devolverAnexos();
           descartarBolhaVazia();
           return;
         }
@@ -223,13 +317,26 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
                   id: evento.tool_call_id,
                   nome: evento.tool_name,
                   estado: "rodando",
+                  // Guardado, e não descartado: é o que o bloco mostra quando
+                  // alguém abre para entender o que o assistente fez.
+                  entrada: evento.input,
                 });
               });
               break;
             case "tool_result":
               atualizar((m) => {
-                const passo = m.passos.find((p) => p.id === evento.tool_call_id);
-                if (passo) passo.estado = evento.is_error ? "erro" : "ok";
+                // Substituído, e não mutado no lugar: o bloco da ferramenta é um
+                // componente com estado próprio, e mudar o objeto que ele já
+                // recebeu deixaria o React sem sinal de que o conteúdo mudou.
+                m.passos = m.passos.map((p) =>
+                  p.id === evento.tool_call_id
+                    ? {
+                        ...p,
+                        estado: evento.is_error ? "erro" : "ok",
+                        saida: evento.output,
+                      }
+                    : p,
+                );
               });
               break;
             case "question_asked":
@@ -261,13 +368,22 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
         // por cima. Mostrar "a conexão caiu" aí seria acusar defeito de uma
         // coisa que a própria pessoa fez.
         if (err instanceof DOMException && err.name === "AbortError") return;
+        // Um anexo que não abre não é queda de conexão, e dizer que é manda a
+        // pessoa tentar de novo o mesmo arquivo ilegível. A mensagem nomeia o
+        // arquivo. Apontado na revisão.
+        if (err instanceof AnexoIlegivelError) {
+          setErro(err.message);
+          devolverAnexos();
+          return;
+        }
         console.error("[volund] falha ao conversar:", err);
         setErro("A conexão caiu no meio da resposta. Tente enviar de novo.");
+        devolverAnexos();
       } finally {
         setEnviando(false);
       }
     },
-    [enviando, selecionado],
+    [anexos, enviando, selecionado],
   );
 
   /** Manda as escolhas da pessoa. O card só sai da tela se elas chegarem. */
@@ -365,37 +481,36 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
         ) : (
           mensagens.map((m) =>
             m.tipo === "pessoa" ? (
-              <div key={m.id} className="flex justify-end">
+              <div key={m.id} className="flex flex-col items-end gap-1.5">
                 <p className="bg-surface-elevated max-w-[85%] rounded-[14px] px-3.5 py-2.5 text-[15px] leading-[1.65] whitespace-pre-wrap">
                   {m.texto}
                 </p>
-              </div>
-            ) : (
-              <div key={m.id} className="flex flex-col gap-2">
-                {m.passos.length > 0 ? (
-                  <ul className="flex flex-col gap-1">
-                    {m.passos.map((p) => (
+                {m.anexos.length > 0 ? (
+                  <ul className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+                    {m.anexos.map((a) => (
                       <li
-                        key={p.id}
-                        className="text-muted-foreground flex items-center gap-2 font-mono text-[11.5px]"
+                        key={a.id}
+                        className="border-border-subtle text-muted-foreground flex items-center gap-1.5 rounded-[8px] border px-2 py-1 text-[11.5px]"
                       >
-                        {p.estado === "rodando" ? (
-                          <Loader2Icon className="size-3.5 animate-spin" />
-                        ) : p.estado === "erro" ? (
-                          <XIcon className="text-destructive size-3.5" />
-                        ) : (
-                          <CheckIcon className="size-3.5" />
-                        )}
-                        <WrenchIcon className="size-3.5" />
-                        {p.nome}
+                        <PaperclipIcon className="size-3 shrink-0" aria-hidden />
+                        <span className="max-w-[180px] truncate">{a.nome}</span>
+                        <span className="shrink-0">{tamanhoLegivel(a.tamanho)}</span>
                       </li>
                     ))}
                   </ul>
                 ) : null}
+              </div>
+            ) : (
+              <div key={m.id} className="flex flex-col gap-2">
+                {m.passos.length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    {m.passos.map((p) => (
+                      <ToolCallBlock key={p.id} chamada={p} />
+                    ))}
+                  </div>
+                ) : null}
                 {m.texto ? (
-                  <p className="text-[15px] leading-[1.65] whitespace-pre-wrap">
-                    {m.texto}
-                  </p>
+                  <AgentMarkdown>{m.texto}</AgentMarkdown>
                 ) : m.passos.length === 0 ? (
                   <Escrevendo />
                 ) : null}
@@ -430,39 +545,105 @@ export function AgentChat({ agents }: { agents: AppAgent[] }) {
       </div>
 
       <form
-        className="flex items-end gap-2"
+        className="flex flex-col gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void enviar(rascunho);
         }}
       >
-        <Textarea
-          value={rascunho}
-          onChange={(e) => setRascunho(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter envia; Shift+Enter quebra linha. Sem isto, escrever dois
-            // parágrafos exigiria o mouse.
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void enviar(rascunho);
+        {anexos.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {anexos.map((a) => (
+              <li
+                key={a.id}
+                className="border-border-subtle bg-surface flex items-center gap-1.5 rounded-[8px] border py-1 pr-1 pl-2 text-[11.5px]"
+              >
+                <PaperclipIcon
+                  className="text-muted-foreground size-3 shrink-0"
+                  aria-hidden
+                />
+                <span className="max-w-[180px] truncate">{a.nome}</span>
+                <span className="text-muted-foreground shrink-0">
+                  {tamanhoLegivel(a.tamanho)}
+                </span>
+                <button
+                  type="button"
+                  disabled={enviando}
+                  onClick={() => removerAnexo(a.id)}
+                  aria-label={`Remover ${a.nome}`}
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground rounded-[6px] p-0.5 transition-colors",
+                    "focus-visible:ring-ring/50 outline-none focus-visible:ring-3",
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <XIcon className="size-3" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="flex items-end gap-2">
+          {/* Fora da vista, mas é ele que abre o seletor do sistema. O botão
+              visível ao lado só o aciona — um `<input type="file">` estilizado
+              não tem aparência consistente entre navegadores. */}
+          <input
+            ref={campoDeArquivo}
+            type="file"
+            multiple
+            accept={ACEITA}
+            className="hidden"
+            onChange={(e) => {
+              escolherAnexos(e.target.files);
+              // Zerar o valor faz o `change` disparar de novo se a pessoa
+              // escolher O MESMO arquivo depois de removê-lo. Sem isto, o
+              // segundo clique não gera evento e nada acontece.
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-lg"
+            disabled={enviando || anexos.length >= LIMITE_DE_ARQUIVOS}
+            onClick={() => campoDeArquivo.current?.click()}
+            aria-label={
+              anexos.length >= LIMITE_DE_ARQUIVOS
+                ? `Máximo de ${LIMITE_DE_ARQUIVOS} anexos`
+                : "Anexar arquivo"
             }
-          }}
-          rows={2}
-          disabled={enviando}
-          placeholder={
-            agente ? `Peça algo para ${agente.name}…` : "Escolha um assistente…"
-          }
-          className="max-h-40 min-h-[52px] resize-none"
-          aria-label="Sua mensagem"
-        />
-        <Button
-          type="submit"
-          size="icon-lg"
-          disabled={enviando || rascunho.trim().length === 0}
-          aria-label={enviando ? "Enviando…" : "Enviar"}
-        >
-          {enviando ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
-        </Button>
+          >
+            <PaperclipIcon />
+          </Button>
+          <Textarea
+            value={rascunho}
+            onChange={(e) => setRascunho(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter envia; Shift+Enter quebra linha. Sem isto, escrever dois
+              // parágrafos exigiria o mouse.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void enviar(rascunho);
+              }
+            }}
+            rows={2}
+            disabled={enviando}
+            placeholder={
+              agente ? `Peça algo para ${agente.name}…` : "Escolha um assistente…"
+            }
+            className="max-h-40 min-h-[52px] resize-none"
+            aria-label="Sua mensagem"
+          />
+          <Button
+            type="submit"
+            size="icon-lg"
+            disabled={enviando || rascunho.trim().length === 0}
+            aria-label={enviando ? "Enviando…" : "Enviar"}
+          >
+            {enviando ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+          </Button>
+        </div>
       </form>
     </div>
   );

@@ -3,6 +3,12 @@ import { z } from "zod";
 
 import { guard } from "@/lib/auth/server";
 import { parseJsonBody, validationResponse } from "@/lib/validation";
+import {
+  LIMITE_DE_ARQUIVOS,
+  LIMITE_POR_ARQUIVO_BYTES,
+  LIMITE_TOTAL_BYTES,
+  tamanhoLegivel,
+} from "@/lib/volund/attachments";
 import { resolveAgentId, volundFor } from "@/lib/volund/agents";
 import { agentChannelResponse } from "@/lib/volund/channel-http";
 
@@ -47,6 +53,35 @@ export const dynamic = "force-dynamic";
  */
 export const maxDuration = 800;
 
+/**
+ * Um anexo, no formato que o SDK aceita (`VolundFileInput`).
+ *
+ * União exclusiva, e `strictObject` é o que a torna exclusiva de verdade.
+ *
+ * `z.object` DESCARTA chave desconhecida em silêncio. Medido: um item com `url`
+ * e `data` juntos casava com o primeiro membro, o `data` sumia, e a rota
+ * encaminhava só a URL — o conteúdo inline nem entrava na conta do peso. A
+ * intenção estava escrita aqui e o código fazia outra coisa; agora o item com
+ * as duas chaves é recusado, que é o que esta frase sempre prometeu. Apontado
+ * na revisão.
+ *
+ * O scaffold só produz `data`, mas `url` fica aberto porque um App que ganhe um
+ * lugar para hospedar arquivo passa a poder usá-lo sem mexer nesta rota — é o
+ * caminho para ultrapassar o teto do corpo (ver `lib/volund/attachments.ts`).
+ */
+const anexo = z.union([
+  z.strictObject({
+    // `z.url()` — em Zod 4 o `z.string().url()` está depreciado.
+    url: z.url("O endereço do anexo não é válido."),
+    name: z.string().min(1).max(300).optional(),
+  }),
+  z.strictObject({
+    data: z.string().min(1, "O anexo chegou vazio."),
+    name: z.string().min(1).max(300).optional(),
+    mime: z.string().min(1).max(200).optional(),
+  }),
+]);
+
 const corpo = z.object({
   input: z.string().min(1, "Escreva alguma coisa.").max(20_000),
   /**
@@ -58,7 +93,27 @@ const corpo = z.object({
    * que divergiria da primeira.
    */
   conversaId: z.string().min(1).max(200).optional(),
+  /**
+   * Os anexos da mensagem.
+   *
+   * O limite de quantidade está aqui, e não só na tela, porque a tela é
+   * conveniência: esta rota atende qualquer cliente que saiba o endereço, e um
+   * teto que vive só no navegador não é um teto.
+   */
+  files: z.array(anexo).max(LIMITE_DE_ARQUIVOS).optional(),
 });
+
+/**
+ * Quantos bytes de conteúdo um base64 representa.
+ *
+ * Serve para conferir o peso REAL do que chegou, e não o número que o cliente
+ * disse. Cada 4 caracteres carregam 3 bytes, menos o preenchimento com `=`.
+ */
+function bytesDoBase64(data: string): number {
+  const limpo = data.includes(",") ? data.slice(data.indexOf(",") + 1) : data;
+  const preenchimento = limpo.endsWith("==") ? 2 : limpo.endsWith("=") ? 1 : 0;
+  return Math.floor((limpo.length * 3) / 4) - preenchimento;
+}
 
 /** Intervalo do batimento que mantém a conexão viva durante um silêncio longo. */
 const PING_MS = 15_000;
@@ -75,6 +130,43 @@ export async function POST(
   const parsed = await parseJsonBody(request, corpo);
   if (!parsed.ok) return validationResponse(parsed);
 
+  const files = parsed.data.files ?? [];
+
+  // O peso conferido no conteúdo que chegou, não no que o cliente afirmou. Um
+  // envio acima do teto do corpo costuma ser cortado pela hospedagem antes de
+  // chegar aqui; quando chega, a recusa precisa dizer o motivo em vez de
+  // deixar a plataforma responder por um erro que não é dela.
+  // As DUAS regras, e não só a soma. `LIMITE_POR_ARQUIVO_BYTES` é 75% do total,
+  // então um arquivo sozinho podia passar do teto individual e ainda ficar
+  // abaixo da soma — quem chamasse esta rota direto contornava a regra que a
+  // tela aplica. Metade das regras no servidor não é validação de servidor.
+  // Apontado na revisão.
+  let pesoInline = 0;
+  for (const f of files) {
+    if (!("data" in f)) continue;
+    const peso = bytesDoBase64(f.data);
+    if (peso > LIMITE_POR_ARQUIVO_BYTES) {
+      // O nome quando ele veio: sem ele a pessoa não sabe qual dos cinco
+      // remover. Sem nome, a frase se vira em vez de inventar um.
+      const qual = f.name ? `“${f.name}”` : "Um dos anexos";
+      return Response.json(
+        {
+          message: `${qual} passa de ${tamanhoLegivel(LIMITE_POR_ARQUIVO_BYTES)}, que é o limite por arquivo.`,
+        },
+        { status: 413 },
+      );
+    }
+    pesoInline += peso;
+  }
+  if (pesoInline > LIMITE_TOTAL_BYTES) {
+    return Response.json(
+      {
+        message: `Somados, os anexos passam de ${tamanhoLegivel(LIMITE_TOTAL_BYTES)}. Envie em duas mensagens.`,
+      },
+      { status: 413 },
+    );
+  }
+
   try {
     // Resolvido mesmo na continuação: o apelido faz parte do endereço, e um
     // endereço que aponta para um agente que o App não oferece deve responder
@@ -82,15 +174,21 @@ export async function POST(
     const { agentId } = await resolveAgentId(gate.session, key);
     const volund = await volundFor(gate.session);
 
+    // `files` só entra quando existe: o SDK aceita a chave ausente, e mandar
+    // uma lista vazia faria a plataforma abrir o caminho de anexos para nada.
+    const comAnexos = files.length > 0 ? { files } : {};
+
     const run = parsed.data.conversaId
       ? await volund.agents.continue({
           runId: parsed.data.conversaId,
           input: parsed.data.input,
+          ...comAnexos,
           signal: request.signal,
         })
       : await volund.agents.run({
           agentId,
           input: parsed.data.input,
+          ...comAnexos,
           signal: request.signal,
         });
 
