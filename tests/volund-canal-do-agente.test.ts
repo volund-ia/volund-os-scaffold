@@ -78,6 +78,8 @@ function sessao(userId: string, accessToken: string): Session {
     name: null,
     roles: [],
     permissions: [],
+    subjectType: "user",
+    actor: null,
     accessToken,
   };
 }

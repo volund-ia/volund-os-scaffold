@@ -18,6 +18,7 @@ import { beforeEach, test } from "node:test";
 import type { AuthConfig } from "../lib/auth/config";
 import { resetDiscoveryCacheForTests } from "../lib/auth/discovery";
 import {
+  APPEARANCE_REVALIDATE_SECONDS,
   APP_APPEARANCE_PATH,
   appearanceEndpoint,
   loadAppAppearance,
@@ -37,8 +38,17 @@ const contrato = JSON.parse(
   readFileSync(new URL("../contracts/app-appearance.json", import.meta.url), "utf8"),
 ) as {
   contract: number;
-  endpoint: { discoveryField: string; fallbackPath: string; method: string };
-  response: { fields: string[]; css: { forbidden: string[] } };
+  method: string;
+  path: string;
+  discovery: string;
+  authentication: { basic: { header: string } };
+  response: {
+    status: number;
+    fields: Record<string, string>;
+    cssSelectors: { dark: string; light: string };
+    cssForbidden: string[];
+  };
+  app: { authentication: string; revalidateSeconds: number; timeoutMs: number };
 };
 
 const CSS =
@@ -80,7 +90,7 @@ beforeEach(() => {
         token_endpoint: `${ISSUER}/oauth/token`,
         userinfo_endpoint: `${ISSUER}/oauth/userinfo`,
         jwks_uri: `${ISSUER}/oauth/jwks`,
-        ...(anunciado ? { [contrato.endpoint.discoveryField]: anunciado } : {}),
+        ...(anunciado ? { [contrato.discovery]: anunciado } : {}),
       });
     }
     pedidos.push({
@@ -98,8 +108,13 @@ test("o contrato da marca anda com o número do scaffold", () => {
     readFileSync(new URL("../volund-scaffold.json", import.meta.url), "utf8"),
   ) as { contract: number };
   assert.equal(contrato.contract, manifesto.contract);
-  assert.equal(APP_APPEARANCE_PATH, contrato.endpoint.fallbackPath);
-  assert.deepEqual(contrato.response.css.forbidden, ["</"]);
+  assert.equal(APP_APPEARANCE_PATH, contrato.path);
+  assert.equal(contrato.discovery, "volund_appearance_endpoint");
+  assert.deepEqual(contrato.response.cssForbidden, ["</"]);
+  // O App autentica pelo caminho `basic` do contrato, com a revalidação dele.
+  assert.equal(contrato.app.authentication, "basic");
+  assert.ok(contrato.authentication.basic.header.startsWith("Authorization: Basic "));
+  assert.equal(APPEARANCE_REVALIDATE_SECONDS, contrato.app.revalidateSeconds);
 });
 
 test("a marca chega traduzida, pedida com o segredo do App", async () => {
@@ -112,12 +127,12 @@ test("a marca chega traduzida, pedida com o segredo do App", async () => {
     avatarBgColor: "#112244",
     css: CSS,
   });
-  assert.deepEqual(Object.keys(aparencia()), contrato.response.fields);
+  assert.deepEqual(Object.keys(aparencia()), Object.keys(contrato.response.fields));
 
   const [p] = pedidos;
   assert.ok(p);
-  assert.equal(p.method, contrato.endpoint.method);
-  assert.equal(p.url, `${ISSUER}${contrato.endpoint.fallbackPath}`);
+  assert.equal(p.method, contrato.method);
+  assert.equal(p.url, `${ISSUER}${contrato.path}`);
   // client_secret_basic, com o mesmo percent-encoding do token endpoint.
   const [tipo, valor] = (p.authorization ?? "").split(" ");
   assert.equal(tipo, "Basic");
@@ -173,6 +188,19 @@ test("css com `</` é recusado, e o resto da marca continua", async (t) => {
   // O caso está ARMADO: o logo e o nome chegam, e o mesmo css sem `</` passa.
   assert.equal(a.name, "Escritório Souza");
   assert.equal(safeBrandCss(CSS), CSS);
+});
+
+test("css vazio é a organização sem cor própria: tema padrão, sem alarme no log", async (t) => {
+  // É o que a plataforma responde quando a organização não escolheu cor
+  // (contracts/app-appearance.json, `response.fields.css`). Logar isso como
+  // recusa encheria o log de todo App sem marca de um falso alarme.
+  const erros = t.mock.method(console, "error", () => {});
+  marca = { status: 200, body: aparencia({ css: "" }) };
+  const a = await loadAppAppearance(config);
+  assert.ok(a);
+  assert.equal(a.css, null);
+  assert.equal(a.name, "Escritório Souza");
+  assert.equal(erros.mock.callCount(), 0);
 });
 
 test("css que não é texto, ou vazio, também fica de fora", () => {

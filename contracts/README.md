@@ -23,12 +23,14 @@ Descreve os claims do **access token** — o token que o App relê a cada
 requisição, e do qual sai tudo o que a aplicação sabe sobre quem está do outro
 lado.
 
-| Campo                | O que significa                                                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contract`           | O contrato de scaffold a que este arquivo pertence. É o mesmo número de `volund-scaffold.json`, e é ele que a plataforma recusa quando não suporta. |
-| `accessToken.always` | Claims presentes em **todo** access token, independentemente do escopo.                                                                             |
-| `accessToken.scoped` | Claim → escopo que o libera. Sem o escopo, o claim **não sai** — é o que impede o token de virar "o perfil de quem o pediu".                        |
-| `session`            | Campo da sessão que o App enxerga → claim que o alimenta. É esta linha que estava quebrada no caso do `email`.                                      |
+| Campo                                            | O que significa                                                                                                                                               |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contract`                                       | O contrato de scaffold a que este arquivo pertence. É o mesmo número de `volund-scaffold.json`, e é ele que a plataforma recusa quando não suporta.           |
+| `accessToken.always`                             | Claims presentes em **todo** access token, independentemente do escopo.                                                                                       |
+| `accessToken.scoped`                             | Claim → escopo que o libera. Sem o escopo, o claim **não sai** — é o que impede o token de virar "o perfil de quem o pediu".                                  |
+| `session`                                        | Campo da sessão que o App enxerga → claim que o alimenta. É esta linha que estava quebrada no caso do `email`.                                                |
+| `accessToken.conditional` / `sessionConditional` | Claim que depende do MODO da emissão (`act`, só quando um agente ou App age pela pessoa) e o campo da sessão que ele alimenta (`actor`, `null` fora do modo). |
+| `modes` / `subjectTypes`                         | Os três modos de emissão (`user`, `delegated`, `own`) e os valores de `subject_type`, que viram `session.subjectType`.                                        |
 
 ## `agent-channel.json`
 
@@ -36,13 +38,13 @@ Descreve o **canal de agentes** (contrato 8, refeito no 9): como esta aplicaçã
 atravessa a fronteira de audiência para falar com a plataforma **em nome de quem
 está usando ela**, e o que recebe de volta.
 
-| Campo          | O que significa                                                                                                                                                         |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `exchange`     | Os valores do pedido de troca (RFC 8693): `grant_type`, os tipos de token, o caminho do `resource` e o escopo. Errar um deles vira recusa, não comportamento diferente. |
-| `roster`       | O endereço e os campos do roteiro de agentes, lido em tempo de execução.                                                                                                |
-| `embedSession` | A sessão do chat embutido em modo pessoa (contrato 9): pedido, resposta, recusas nomeadas e as mensagens `postMessage` entre o quadro e o App.                          |
-| `headless`     | Chamar um agente por código no servidor: `volundFor` + `resolveAgentId`, sobre o `@volund-ia/sdk`.                                                                      |
-| `legacyProxy`  | As rotas de conversa do scaffold até o contrato 8, removidas no 9 — descritas para quem mantém um App gerado antes.                                                     |
+| Campo          | O que significa                                                                                                                                                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exchange`     | Os valores do pedido de troca (RFC 8693): `grant_type`, os tipos de token, o caminho do `resource` e o escopo. Errar um deles vira recusa, não comportamento diferente.                       |
+| `roster`       | O endereço e os campos do roteiro de agentes, lido em tempo de execução.                                                                                                                      |
+| `embedSession` | A sessão do chat embutido em modo pessoa (contrato 9): corpo, resposta, `revoke` (`DELETE …/{sessionId}`), recusas com status, e `frame` — as mensagens `postMessage` entre o quadro e o App. |
+| `headless`     | Chamar um agente por código no servidor: `volundFor` + `resolveAgentId`, sobre o `@volund-ia/sdk`.                                                                                            |
+| `legacyProxy`  | As rotas de conversa do scaffold até o contrato 8, removidas no 9 — descritas para quem mantém um App gerado antes.                                                                           |
 
 Duas coisas que ele fixa e que vale ler antes de mexer:
 
@@ -63,10 +65,26 @@ janela, e nenhuma posta para `*`.
 ## `app-appearance.json`
 
 A marca da organização (contrato 9): onde o App a lê (o
-`volund_appearance_endpoint` da descoberta, ou `/oauth/app-appearance`), como se
-autentica (o segredo do App, em Basic), os campos da resposta e a forma do `css`
-— dois blocos com os mesmos nomes de variável do tema, que o App recusa se não
-for texto ou se contiver `</`.
+`volund_appearance_endpoint` da descoberta, ou `path`), as duas autenticações
+que a plataforma aceita (`bearer` com o token da sessão, `basic` com o segredo do
+App — o scaffold usa `basic`), os campos da resposta, os seletores do `css`, o
+cache (`private, max-age=300`) e, em `app`, o que o lado do App faz: recusa `css`
+que não seja texto ou contenha `</`, e segue com o tema padrão em qualquer falha.
+
+## Os quatro arquivos são idênticos, byte a byte
+
+`auth-claims.json`, `frame-protocol.json`, `agent-channel.json` e
+`app-appearance.json` existem nos dois repositórios com o MESMO conteúdo. Cada
+lado tem campos que só ele usa (`appRoute` e `app` são do scaffold;
+`authentication.bearer` e `cache` são da plataforma), e eles ficam no arquivo
+comum mesmo assim: duas versões "cada uma com o que precisa" foram exatamente o
+que deixou o scaffold sem `subject_type` enquanto a plataforma o prometia.
+
+`tests/contratos-identicos.test.ts` confere o sha256 de cada um contra uma lista
+gravada no próprio teste, sem rede. Mudar um contrato é: editar, copiar para o
+volund-os, conferir com `cmp`, e só então atualizar o hash. A formatação é a do
+Prettier deste repositório (`npx prettier --write contracts/`), porque é aqui que
+ela é conferida.
 
 ## Como as duas pontas usam
 

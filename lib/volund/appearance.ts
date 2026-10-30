@@ -154,10 +154,10 @@ export async function loadAppAppearance(
     }
     const a = parsed.data;
     const css = safeBrandCss(a.css);
-    if (a.css != null && css === null) {
-      console.error(
-        "[volund] css da marca recusado (não é texto, vazio, grande ou com `</`)",
-      );
+    // `""` é a resposta normal de organização sem cor própria (valem os tokens
+    // do App), e não recusa — só o que veio e não passou vai para o log.
+    if (a.css != null && a.css !== "" && css === null) {
+      console.error("[volund] css da marca recusado (não é texto, grande ou com `</`)");
     }
     return {
       name: a.name?.trim() || null,

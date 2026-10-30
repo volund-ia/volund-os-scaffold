@@ -39,8 +39,17 @@ const read = (rel: string) => readFileSync(path.join(root, rel), "utf8");
 
 interface ClaimsContract {
   contract: number;
-  accessToken: { always: string[]; scoped: Record<string, string> };
+  accessToken: {
+    always: string[];
+    scoped: Record<string, string>;
+    /** Claim → modo de emissão em que ele sai (`act` só no `delegated`). */
+    conditional: Record<string, string>;
+  };
+  modes: Record<string, string>;
+  subjectTypes: string[];
   session: Record<string, string>;
+  /** Campo da sessão → claim condicional que o alimenta; vazio fora do modo. */
+  sessionConditional: Record<string, string>;
 }
 
 const contract = JSON.parse(read("contracts/auth-claims.json")) as ClaimsContract;
@@ -66,7 +75,7 @@ function sliceBetween(source: string, from: string, to: string): string {
  * cópia local envelheceria sem ninguém notar, que é exatamente o modo de falhar
  * que este arquivo existe para fechar.
  */
-function claimsFromContract(): TokenClaims {
+function claimsFromContract(mode: "user" | "delegated" = "user"): TokenClaims {
   const value: Record<string, unknown> = {
     iss: "https://os.volund.com.br",
     sub: "user-1",
@@ -81,13 +90,20 @@ function claimsFromContract(): TokenClaims {
     permissions: ["app:app-1:algo"],
     email: "pessoa@exemplo.com.br",
     name: "Pessoa Exemplo",
+    subject_type: "user",
   };
+  // Os claims condicionais só no modo em que o contrato diz que eles saem.
+  for (const [claim, claimMode] of Object.entries(contract.accessToken.conditional)) {
+    if (claimMode === mode && claim === "act")
+      value.act = { sub: "agente-1", type: "agent" };
+  }
 
   // Só o que o contrato descreve. Um claim a mais aqui esconderia a ausência do
   // claim de verdade.
   const permitidos = new Set([
     ...contract.accessToken.always,
     ...Object.keys(contract.accessToken.scoped),
+    ...Object.keys(contract.accessToken.conditional),
     "exp",
     "iat",
   ]);
@@ -116,6 +132,13 @@ function sessionFromClaims(claims: TokenClaims) {
     name: claims.name ?? null,
     roles: Array.isArray(claims.roles) ? claims.roles : [],
     permissions: Array.isArray(claims.permissions) ? claims.permissions : [],
+    subjectType: claims.subject_type === "agent" ? "agent" : "user",
+    actor:
+      claims.act &&
+      typeof claims.act.sub === "string" &&
+      typeof claims.act.type === "string"
+        ? { sub: claims.act.sub, type: claims.act.type }
+        : null,
   };
 }
 
@@ -129,9 +152,51 @@ test("o contrato cobre TODOS os campos da sessão, sem sobra dos dois lados", ()
 
   assert.deepEqual(
     Object.keys(session).sort(),
-    Object.keys(contract.session).sort(),
+    [
+      ...Object.keys(contract.session),
+      ...Object.keys(contract.sessionConditional),
+    ].sort(),
     "campo da sessão fora do contrato (ou contrato prometendo campo que a sessão não tem)",
   );
+});
+
+test("o campo condicional chega no modo dele, e só nele", () => {
+  // `actor` vem de `act`, que só sai no modo `delegated` (um agente agindo pela
+  // pessoa). Conferir só que ele é `null` no modo `user` mediria o silêncio:
+  // o caso armado é o `delegated`, em que ele PRECISA chegar.
+  for (const [field, claim] of Object.entries(contract.sessionConditional)) {
+    const modo = contract.accessToken.conditional[claim];
+    assert.ok(
+      modo && modo in contract.modes,
+      `\`${claim}\` sem modo descrito no contrato`,
+    );
+    const delegado = sessionFromClaims(claimsFromContract("delegated")) as Record<
+      string,
+      unknown
+    >;
+    assert.ok(delegado[field], `\`session.${field}\` não chegou no modo \`${modo}\``);
+    const proprio = sessionFromClaims(claimsFromContract("user")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(
+      proprio[field],
+      null,
+      `\`session.${field}\` apareceu fora do modo \`${modo}\``,
+    );
+  }
+});
+
+test("o tipo do sujeito na sessão é exatamente o que o contrato lista", () => {
+  const src = read("lib/auth/session.ts");
+  const bloco = sliceBetween(src, "export interface Session {", "accessToken: string;");
+  const tipo = /subjectType:\s*([^;]+);/.exec(bloco)?.[1] ?? "";
+  const valores = [...tipo.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(valores.sort(), [...contract.subjectTypes].sort());
+  // E o agente agindo como ele mesmo é reconhecido — sem isto, `userId` seria
+  // lido como o id de uma pessoa quando é o de um agente.
+  const agente = sessionFromClaims({ ...claimsFromContract(), subject_type: "agent" });
+  assert.equal(agente.subjectType, "agent");
 });
 
 test("todo campo da sessão chega preenchido a partir dos claims do contrato", () => {
@@ -163,8 +228,13 @@ test("o mapeamento testado aqui é o MESMO de `readSession`", () => {
     "export function needsRefresh",
   );
 
-  for (const [field, claim] of Object.entries(contract.session)) {
-    const esperado = new RegExp(`${field}:\\s*(Array\\.isArray\\()?claims\\.${claim}`);
+  for (const [field, claim] of Object.entries({
+    ...contract.session,
+    ...contract.sessionConditional,
+  })) {
+    const esperado = new RegExp(
+      `${field}:\\s*(Array\\.isArray\\(|\\w+\\()?claims\\.${claim}\\b`,
+    );
     assert.match(
       bloco,
       esperado,
@@ -185,6 +255,7 @@ test("o tipo dos claims declara tudo o que o contrato promete", () => {
   for (const claim of [
     ...contract.accessToken.always,
     ...Object.keys(contract.accessToken.scoped),
+    ...Object.keys(contract.accessToken.conditional),
   ]) {
     assert.match(
       bloco,

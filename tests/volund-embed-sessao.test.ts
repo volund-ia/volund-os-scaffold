@@ -56,21 +56,27 @@ const contrato = JSON.parse(
 ) as {
   contract: number;
   embedSession: {
+    method: string;
+    path: string;
     authentication: string;
-    create: {
-      method: string;
-      path: string;
-      contentType: string;
-      cache: string;
-      bodyFields: string[];
-      enums: { color_mode: string[]; locale: string[] };
-      ttlSeconds: { min: number; max: number };
-      successStatus: number;
-      responseFields: string[];
+    contentType: string;
+    cache: string;
+    body: {
+      agent: string;
+      thread_id: string;
+      color_mode: string[];
+      locale: string[];
+      ttl_seconds: { min: number; max: number; default: number };
     };
-    revoke: { method: string; path: string; successStatus: number };
+    response: { status: number; fields: string[] };
+    revoke: { method: string; path: string; status: number };
     errors: Record<string, { status: number }>;
-    messages: { fromFrame: string[]; toFrame: Record<string, unknown> };
+    errorBody: string[];
+    frame: {
+      fromFrame: string[];
+      toFrame: { type: string; fields: { mode: string[] } };
+      otherToFrame: Record<string, { fields: string[] }>;
+    };
   };
 };
 const embed = contrato.embedSession;
@@ -84,6 +90,8 @@ function sessao(userId: string, accessToken: string): Session {
     name: null,
     roles: [],
     permissions: [],
+    subjectType: "user",
+    actor: null,
     accessToken,
   };
 }
@@ -109,7 +117,7 @@ let resposta: { status: number; body: unknown } = { status: 201, body: {} };
 
 function respostaBoa(extra: Record<string, unknown> = {}) {
   return {
-    status: embed.create.successStatus,
+    status: embed.response.status,
     body: {
       session_id: "sessao-1",
       embed_url: `${ISSUER}/embed/c/sessao-1#code=abc`,
@@ -185,15 +193,18 @@ test("o pedido de sessão bate com o contrato `embedSession`", async () => {
   );
 
   const p = pedido(0);
-  assert.equal(p.url, `${ISSUER}${embed.create.path}`);
-  assert.equal(EMBED_SESSIONS_PATH, embed.create.path);
-  assert.equal(p.method, embed.create.method);
-  assert.equal(p.headers.get("content-type"), embed.create.contentType);
-  assert.equal(p.cache, embed.create.cache);
+  assert.equal(p.url, `${ISSUER}${embed.path}`);
+  assert.equal(EMBED_SESSIONS_PATH, embed.path);
+  assert.equal(p.method, embed.method);
+  assert.equal(p.headers.get("content-type"), embed.contentType);
+  assert.equal(p.cache, embed.cache);
 
   // Bearer com o token da TROCA — não o da sessão do App, que a plataforma
   // recusaria (`not_an_app_token`) e que, se aceito, não diria "através deste App".
-  assert.equal(embed.authentication, "Bearer <token da troca>");
+  assert.match(
+    embed.authentication,
+    /^Authorization: Bearer <token de plataforma obtido em `exchange`>$/,
+  );
   assert.equal(p.headers.get("authorization"), `Bearer ${TOKEN_TROCADO}`);
   assert.notEqual(p.headers.get("authorization"), "Bearer token-da-sessao");
 
@@ -207,7 +218,9 @@ test("o pedido de sessão bate com o contrato `embedSession`", async () => {
   });
   assert.deepEqual(
     Object.keys(p.body as object).sort(),
-    [...embed.create.bodyFields].sort(),
+    Object.keys(embed.body)
+      .filter((k) => !k.startsWith("$"))
+      .sort(),
   );
 });
 
@@ -232,20 +245,21 @@ test("a resposta chega traduzida, e com o endereço do quadro intacto", async ()
   // O código de entrada mora no fragmento: perdê-lo na tradução abriria um
   // quadro que não entra.
   assert.ok(new URL(s.embedUrl).hash.startsWith("#code="));
-  assert.deepEqual(Object.keys(respostaBoa().body), embed.create.responseFields);
+  assert.deepEqual(Object.keys(respostaBoa().body), embed.response.fields);
 });
 
 test("os limites do que a tela pode pedir são os do contrato", () => {
-  assert.equal(EMBED_TTL_MIN_SECONDS, embed.create.ttlSeconds.min);
-  assert.equal(EMBED_TTL_MAX_SECONDS, embed.create.ttlSeconds.max);
+  assert.equal(EMBED_TTL_MIN_SECONDS, embed.body.ttl_seconds.min);
+  assert.equal(EMBED_TTL_MAX_SECONDS, embed.body.ttl_seconds.max);
   const ok = (v: unknown) => embedSessionOptionsSchema.safeParse(v).success;
-  assert.equal(ok({ ttlSeconds: embed.create.ttlSeconds.min }), true);
-  assert.equal(ok({ ttlSeconds: embed.create.ttlSeconds.min - 1 }), false);
-  assert.equal(ok({ ttlSeconds: embed.create.ttlSeconds.max + 1 }), false);
-  for (const m of embed.create.enums.color_mode)
-    assert.equal(ok({ colorMode: m }), true);
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.min }), true);
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.min - 1 }), false);
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.max + 1 }), false);
+  // Sem `ttlSeconds`, o App não manda o campo e vale o padrão da plataforma.
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.default }), true);
+  for (const m of embed.body.color_mode) assert.equal(ok({ colorMode: m }), true);
   assert.equal(ok({ colorMode: "sepia" }), false);
-  for (const l of embed.create.enums.locale) assert.equal(ok({ locale: l }), true);
+  for (const l of embed.body.locale) assert.equal(ok({ locale: l }), true);
   assert.equal(ok({ locale: "fr" }), false);
   assert.equal(ok({ threadId: THREAD }), true);
   assert.equal(ok({ threadId: "nao-e-uuid" }), false);
@@ -274,6 +288,7 @@ test("as recusas nomeadas viram motivo próprio", async (t) => {
     ["thread_not_found", "conversa_desconhecida"],
     ["not_an_app_token", "indisponivel"],
     ["invalid_request", "indisponivel"],
+    ["internal_error", "indisponivel"],
   ];
   for (const [codigo, motivo] of casos) {
     const def = embed.errors[codigo];
@@ -282,7 +297,15 @@ test("as recusas nomeadas viram motivo próprio", async (t) => {
     const erro = await falha(createEmbedSession(sessao("pessoa-1", "t"), {}, config));
     assert.equal(erro.code, motivo, codigo);
   }
-  assert.deepEqual(Object.keys(embed.errors).sort(), casos.map(([c]) => c).sort());
+  // `session_not_found` é só do DELETE (caso próprio abaixo). Recusa nova no
+  // contrato sem caso aqui reprova: ela cairia calada no genérico.
+  assert.deepEqual(
+    Object.keys(embed.errors)
+      .filter((k) => !k.startsWith("$"))
+      .sort(),
+    [...casos.map(([c]) => c), "session_not_found"].sort(),
+  );
+  assert.deepEqual(embed.errorBody, ["error", "message"]);
 });
 
 test("resposta 201 em formato inesperado é indisponibilidade, não sessão sem endereço", async (t) => {
@@ -295,7 +318,7 @@ test("resposta 201 em formato inesperado é indisponibilidade, não sessão sem 
 });
 
 test("encerrar a sessão é DELETE no caminho do contrato, com o token trocado", async () => {
-  resposta = { status: embed.revoke.successStatus, body: null };
+  resposta = { status: embed.revoke.status, body: null };
   assert.equal(
     await revokeEmbedSession(sessao("pessoa-1", "t"), "sessao 1/x", config),
     true,
@@ -304,9 +327,19 @@ test("encerrar a sessão é DELETE no caminho do contrato, com o token trocado",
   assert.equal(p.method, embed.revoke.method);
   assert.equal(
     p.url,
-    `${ISSUER}${embed.revoke.path.replace("{session_id}", encodeURIComponent("sessao 1/x"))}`,
+    `${ISSUER}${embed.revoke.path.replace("{sessionId}", encodeURIComponent("sessao 1/x"))}`,
   );
   assert.equal(p.headers.get("authorization"), `Bearer ${TOKEN_TROCADO}`);
+});
+
+test("encerrar sessão que não é mais desta pessoa conta como encerrada", async () => {
+  // O DELETE é idempotente (204 também já encerrada) e responde 404
+  // `session_not_found` à de outro App/pessoa ou inexistente: nos dois casos não
+  // há mais o que encerrar daqui, e insistir não muda nada.
+  const def = embed.errors.session_not_found;
+  assert.ok(def);
+  resposta = { status: def.status, body: { error: "session_not_found", message: "x" } };
+  assert.equal(await revokeEmbedSession(sessao("pessoa-1", "t"), "s", config), true);
 });
 
 test("encerrar nunca lança, e diz quando não conseguiu", async (t) => {
@@ -316,9 +349,10 @@ test("encerrar nunca lança, e diz quando não conseguiu", async (t) => {
 });
 
 test("os nomes das mensagens do quadro são os do contrato", () => {
-  assert.deepEqual([...EMBED_EVENTS], embed.messages.fromFrame);
-  assert.deepEqual(Object.keys(embed.messages.toFrame), [
-    "volund:set-color-mode",
+  assert.deepEqual([...EMBED_EVENTS], embed.frame.fromFrame);
+  assert.equal(embed.frame.toFrame.type, "volund:set-color-mode");
+  assert.deepEqual(embed.frame.toFrame.fields.mode, ["light", "dark", "system"]);
+  assert.deepEqual(Object.keys(embed.frame.otherToFrame), [
     "volund:send",
     "volund:new-thread",
   ]);

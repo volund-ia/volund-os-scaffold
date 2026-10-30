@@ -129,10 +129,10 @@ test("o seletor do claro fica entre as duas camadas da marca da organização", 
   const css = read("app/globals.css");
   assert.doesNotMatch(css, /^html\[data-tema="claro"\]\s*\{/m);
   const contrato = JSON.parse(read("contracts/app-appearance.json")) as {
-    response: { css: { darkSelector: string; lightSelector: string } };
+    response: { cssSelectors: { dark: string; light: string } };
   };
-  assert.equal(contrato.response.css.darkSelector, "html:root");
-  assert.equal(contrato.response.css.lightSelector, 'html:root[data-tema="claro"]');
+  assert.equal(contrato.response.cssSelectors.dark, "html:root");
+  assert.equal(contrato.response.cssSelectors.light, 'html:root[data-tema="claro"]');
 });
 
 test("a classe `.dark` continua de fora — o claro é o atributo, não um segundo tema por classe", () => {

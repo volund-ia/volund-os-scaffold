@@ -73,6 +73,8 @@ import { guard } from "@/lib/auth/server";
 const gate = await guard();
 if (!gate.ok) return gate.response;
 // gate.session.userId, .orgId, .email, .name
+// .subjectType: "user" (pessoa) | "agent" (agente agindo como ele mesmo)
+// .actor: quem agiu PELA pessoa ({ sub, type }) ou null — trilha, não permissão
 
 // Onde a ausência de sessão é aceitável (a vitrine, por exemplo):
 import { getSession } from "@/lib/auth/server";

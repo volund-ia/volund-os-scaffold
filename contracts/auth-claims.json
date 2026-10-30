@@ -1,11 +1,13 @@
 {
-  "$comment_v4": "O contrato 4 NAO muda claim nenhum: ele acrescenta ao artefato a rota GET /api/_volund/surface, que a plataforma usa para conferir a superficie declarada contra a real. Ela se autentica por assinatura HMAC sobre o VOLUND_OIDC_CLIENT_SECRET, fora do caminho de token. O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
   "$comment": "Contrato dos claims do ACCESS token entre o provedor (volund-os) e o scaffold dos Apps (volund-os-scaffold). Versionado IDÊNTICO nos dois repositórios; a coordenação é o número de contrato do scaffold, que a plataforma já recusa quando não suporta. Ver contracts/README.md.",
-  "$comment_v3": "O contrato 3 (camada de serviço, rota de API e endpoint MCP) NÃO mudou nenhum claim: a superfície programática autentica com o MESMO access token da sessão web, verificado do mesmo jeito. O número subiu porque ele é o do scaffold, e é essa igualdade que o teste vigia nos dois lados. Os claims de identidade de agente (subject_type, act) entram DENTRO do contrato 3, na fase de consumo por agentes.",
-  "$comment_v5": "O contrato 5 NAO muda claim nenhum: ele acrescenta a DESCOBERTA que o fluxo padrao de autorizacao do MCP exige — o parametro `resource_metadata` no `WWW-Authenticate` da recusa e a rota publica GET /.well-known/oauth-protected-resource (RFC 9728), que aponta o servidor de autorizacao. O token continua sendo o MESMO access token da sessao web, verificado do mesmo jeito. O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
-  "$comment_v6": "O contrato 6 NAO muda claim nenhum — muda quem o App compara com o que. Ate o 5 o artefato se amarrava a si mesmo por `azp === client_id` (o token tinha de ter sido obtido pelo client do PROPRIO App) e conferia `aud` contra o `app_id` do MESMO token, o que e circular. O efeito era 401 para um token valido emitido para este App, quando quem o obteve foi um cliente de MCP registrado sozinho (RFC 7591) — exatamente o caso que a spec de autorizacao do MCP existe para atender. No 6 a plataforma injeta VOLUND_APP_ID e o App confere `app_id` e `aud` contra ela, de FORA do token. O `azp` continua sendo emitido e continua em `always`: virou trilha de qual cliente entrou, e deixou de ser portao.",
-  "$comment_v8": "O contrato 8 NAO muda claim nenhum do access token do App. Ele acrescenta o CANAL DE AGENTES: a troca de token (RFC 8693) que leva a identidade de quem usa a aplicacao ate a plataforma, o roteiro lido em tempo de execucao e as telas de conversa. O token que a troca emite e OUTRO token, com outra audiencia (volund:platform:api) e com o claim `act` — ele e descrito em contracts/agent-channel.json, nao aqui. O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
-  "$comment_v9": "O contrato 9 NAO muda claim nenhum. Ele troca a tela de conversa do App pelo chat embutido do VolundOS em modo pessoa (sessao criada com o token da troca, ver contracts/agent-channel.json, `embedSession`), acrescenta a marca da organizacao (contracts/app-appearance.json) e o tema claro decidido pelo painel (contracts/frame-protocol.json, `panelToAppTheme`). O numero sobe porque ele e o do SCAFFOLD, e o teste exige igualdade com o manifesto nos dois repositorios.",
+  "$comment_v3": "O contrato 3 do scaffold (camada de serviço, rota e endpoint MCP) não mudou nenhum claim: a superfície programática autentica com o mesmo access token da sessão web. Os claims de identidade de agente (subject_type, act) entraram DENTRO do contrato 3. A release v3.0.0 foi publicada em 11/08/2026 — a versão anterior deste comentário dizia que ela ainda não fora cortada, e isso deixou de valer.",
+  "$comment_v4": "O contrato 4 também NÃO muda claim nenhum. Ele acrescenta ao artefato a rota de introspecção GET /api/_volund/surface (Fase 4 · 4.3), que a plataforma usa para conferir a superfície declarada contra a real — e que se autentica por assinatura HMAC sobre o VOLUND_OIDC_CLIENT_SECRET, fora do caminho de token. O número sobe aqui porque o teste exige igualdade com SUPPORTED_CONTRACT: ele é o número DO SCAFFOLD, e não um versionamento próprio dos claims. Um contrato de claims que ficasse para trás faria a trava de coordenação apontar para a versão errada.",
+  "$comment_v5": "O contrato 5 também NÃO muda claim nenhum: ele acrescenta a DESCOBERTA que o fluxo padrão de autorização do MCP exige — o `resource_metadata` no `WWW-Authenticate` da recusa e a rota pública GET /.well-known/oauth-protected-resource (RFC 9728) no App, e o caminho /.well-known/oauth-authorization-server (RFC 8414) no provedor. O token continua sendo o MESMO access token da sessão web, verificado do mesmo jeito. O número subiu aqui DEPOIS: o scaffold cortou a v5 com este arquivo em 5 e o lado da plataforma ficou em 4, o que deixou `oidc-contrato-de-claims` vermelho na main — a trava de coordenação apontando para a versão errada, que é exatamente o que este número existe para impedir.",
+  "$comment_v6": "O contrato 6 também NÃO muda claim nenhum — muda quem o App compara com o quê. Até o 5, o artefato se amarrava a si mesmo por `azp === client_id` (o token tinha de ter sido obtido pelo client do PRÓPRIO App) e conferia `aud` contra o `app_id` do MESMO token, o que é circular. O efeito era o defeito que travou o BUG-113: um cliente de MCP registrado sozinho (RFC 7591) apresenta um token cujo `azp` é o dele, e o App devolvia 401 a um token válido emitido para ele. No 6 a plataforma injeta a quarta variável, VOLUND_APP_ID, e o App confere `app_id` e `aud` contra ela — de FORA do token. O `azp` continua sendo emitido e continua no contrato: ele é a trilha de qual client obteve o token, e deixou de ser portão.",
+  "$comment_v7": "O contrato 7 também NÃO muda claim nenhum: ele acrescenta ao artefato o AVISO DE ROTA para quem o emoldura — o `postMessage` descrito em contracts/frame-protocol.json, que deixa o painel saber em que página o quadro está e navegá-lo sem remontá-lo. Nada disso passa por token. O número sobe aqui pela mesma razão dos três anteriores: ele é o número DO SCAFFOLD, e a trava de coordenação exige igualdade com SUPPORTED_CONTRACT.",
+  "$comment_v8": "O contrato 8 também NÃO muda claim nenhum do ACCESS token de App. Ele acrescenta ao artefato o chat do agente do app (rotas de proxy em app/api/volund/, componentes em components/volund/, dependência @volund-ia/sdk). O token que a aplicação usa para falar com a PLATAFORMA é outro — audiência volund:platform:api, obtido pela troca da RFC 8693 (lib/oidc/token-exchange.ts) — e ele não é objeto deste arquivo, que descreve o que o App RECEBE como recurso. O `act` já previsto aqui ganhou um segundo valor de `type` (`app`, ao lado de `agent`), e ele continua no balde `conditional` pelo mesmo motivo de sempre: depende do modo da emissão. O número sobe porque ele é o número DO SCAFFOLD, e a trava de coordenação exige igualdade com SUPPORTED_CONTRACT.",
+  "$comment_v9": "O contrato 9 também NÃO muda claim nenhum. Ele troca o chat próprio do artefato pelo chat EMBUTIDO do VolundOS em modo pessoa (a sessão sai de POST /api/v1/apps/me/embed-sessions, autenticada pelo token da troca RFC 8693 descrito em contracts/agent-channel.json), acrescenta a leitura da marca white-label (GET /oauth/app-appearance, contracts/app-appearance.json, autenticada pelo MESMO access token deste arquivo ou pela credencial do cliente) e o evento de tema do contracts/frame-protocol.json. O número sobe porque ele é o número DO SCAFFOLD, e a trava de coordenação exige igualdade com SUPPORTED_CONTRACT.",
+  "$comment_conditional": "`conditional` existe porque `act` não é nem sempre nem por escopo: ele depende do MODO da emissão. Sem um balde próprio ele teria de entrar em `always` — e aí o modo próprio, que não tem ator, violaria o contrato — ou em `scoped`, e aí um escopo passaria a decidir a semântica da trilha de auditoria, que não é o que escopo faz.",
   "contract": 9,
   "accessToken": {
     "always": [
@@ -16,21 +18,35 @@
       "app_id",
       "org_id",
       "scope",
+      "subject_type",
       "roles",
       "permissions"
     ],
     "scoped": {
       "email": "email",
       "name": "profile"
+    },
+    "conditional": {
+      "act": "delegated"
     }
   },
+  "modes": {
+    "user": "Pessoa no navegador. `sub` = id da pessoa, `subject_type` = \"user\", sem `act`.",
+    "delegated": "Agente agindo PELA pessoa. `sub` = id da pessoa, `subject_type` = \"user\", `act` = { sub: <agentId>, type: \"agent\" }. As permissões que valem são as da PESSOA; o `act` registra quem agiu, não acrescenta poder.",
+    "own": "Agente agindo como ele mesmo. `sub` = id do agente, `subject_type` = \"agent\", sem `act`. As permissões que valem são as do AGENTE."
+  },
+  "subjectTypes": ["user", "agent"],
   "session": {
     "userId": "sub",
     "orgId": "org_id",
     "appId": "app_id",
+    "subjectType": "subject_type",
     "email": "email",
     "name": "name",
     "roles": "roles",
     "permissions": "permissions"
+  },
+  "sessionConditional": {
+    "actor": "act"
   }
 }
