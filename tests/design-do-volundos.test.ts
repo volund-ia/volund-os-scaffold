@@ -43,7 +43,7 @@ function sourceFiles(dir = root, out: string[] = []): string[] {
 // 1. O tema é o do VolundOS, e é único
 // ---------------------------------------------------------------------------
 
-test("o tema é escuro e o acento é o crimson do VolundOS", () => {
+test("o tema padrão é escuro e o acento é o crimson do VolundOS", () => {
   const css = read("app/globals.css");
 
   // O crimson do VolundOS, no valor que a PLATAFORMA usa — é o que faz um App

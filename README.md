@@ -9,17 +9,45 @@ dependências.
 
 ## O que vem pronto
 
-|                |                                                                                    |
-| -------------- | ---------------------------------------------------------------------------------- |
-| Aplicação      | Next.js (App Router), React 19, Tailwind v4                                        |
-| Banco          | `pg` com pool único em `lib/db.ts`, conexão por `DATABASE_URL`                     |
-| Autenticação   | OIDC da plataforma, sessão selada em cookie — sem cadastro próprio                 |
-| Agentes do app | chat pronto em `/agentes`, em nome de **quem está conversando** (sem chave de API) |
-| Validação      | `zod` + helpers de fronteira em `lib/validation.ts`                                |
-| Interface      | **shadcn/ui** (sobre Base UI), 14 componentes base + CLI local                     |
-| Estados de UI  | `error.tsx`, `not-found.tsx`, `loading.tsx`                                        |
-| Qualidade      | ESLint, Prettier, `tsc` estrito, testes com `node:test` + `tsx`                    |
-| Convenção      | `AGENTS.md` com as regras que o agente segue neste repositório                     |
+|                |                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Aplicação      | Next.js (App Router), React 19, Tailwind v4                                                                                                            |
+| Banco          | `pg` com pool único em `lib/db.ts`, conexão por `DATABASE_URL`                                                                                         |
+| Autenticação   | OIDC da plataforma, sessão selada em cookie — sem cadastro próprio                                                                                     |
+| Agentes do app | chat embutido do VolundOS em `/agentes`, em nome de **quem está conversando** (sem chave de API); chamada por código no servidor pelo `@volund-ia/sdk` |
+| Tema e marca   | claro e escuro decididos pelo VolundOS (painel ou aparelho); logo, ícone e cores da organização vindos da plataforma                                   |
+| Validação      | `zod` + helpers de fronteira em `lib/validation.ts`                                                                                                    |
+| Interface      | **shadcn/ui** (sobre Base UI), 14 componentes base + CLI local                                                                                         |
+| Estados de UI  | `error.tsx`, `not-found.tsx`, `loading.tsx`                                                                                                            |
+| Qualidade      | ESLint, Prettier, `tsc` estrito, testes com `node:test` + `tsx`                                                                                        |
+| Convenção      | `AGENTS.md` com as regras que o agente segue neste repositório                                                                                         |
+
+## Agentes do app
+
+A conversa é o **chat embutido do VolundOS** em modo pessoa, e não um chat do
+scaffold. O servidor do App troca o token da sessão de quem está usando
+(RFC 8693), cria a sessão em `POST /api/v1/apps/me/embed-sessions` e a tela mostra
+o quadro (`components/volund/agent-embed.tsx`), que acompanha o tema do App e se
+renova antes de vencer (`POST /api/volund/embed-session`).
+
+Para chamar um agente **por código**, no servidor e sem tela:
+
+```ts
+import { resolveAgentId, volundFor } from "@/lib/volund/agents";
+
+const volund = await volundFor(session); // token da troca, nunca no navegador
+const { agentId } = await resolveAgentId(session, "suporte");
+const { output } = await (await volund.agents.run({ agentId, input: "…" })).result();
+```
+
+## Tema e marca
+
+O escuro é o `:root` de `app/globals.css`; o claro é `data-tema="claro"` no
+`<html>`. Emoldurado no painel, o App segue o tema da pessoa no VolundOS (mensagem
+`theme` de `contracts/frame-protocol.json`); aberto direto, segue
+`prefers-color-scheme`. A marca da organização vem de `GET /oauth/app-appearance`
+(`lib/volund/appearance.ts`) e, se a plataforma não responder, o App abre com o
+tema padrão.
 
 ## Comandos
 

@@ -287,43 +287,70 @@ Se o usuário perguntar "como um agente usa meu App", a resposta é: o endereço
 publicado + `/api/mcp`, com o token da organização — e ele configura isso em
 Integrações, no VolundOS. Você não constrói nada para isso funcionar.
 
-## Agentes do app — o chat já existe
+## Agentes do app — o chat é o do VolundOS
 
 Este App pode **oferecer agentes a quem usa ele**. Não é o agente que constrói a
 aplicação (você): é um assistente separado, vinculado ao App no painel do
 VolundOS, na aba **Agentes**. A tela pronta está em `/agentes`
-(`app/agentes/page.tsx`), os componentes em `components/volund/` e a camada de
-servidor em `lib/volund/agents.ts`.
+(`app/agentes/page.tsx`).
+
+**A conversa é o chat embutido do VolundOS, num quadro.** Markdown, anexos,
+aprovações, perguntas, ferramentas e artefatos são da plataforma e evoluem lá. O
+servidor do App cria a sessão do chat em nome da pessoa (`createEmbedSession` em
+`lib/volund/embed.ts`) e `<AgentEmbed>` (`components/volund/agent-embed.tsx`)
+mostra o quadro, acompanha o tema do App e renova a sessão antes de ela vencer.
+
+> **Não recrie um chat próprio** — nem com `react-markdown`, nem com o SDK em
+> streaming, nem "só uma caixinha de mensagem". O contrato 9 tirou exatamente
+> isso do scaffold: cada recurso novo do chat do VolundOS virava uma divergência
+> em cada App. Se o usuário pedir "um chat na tela X", é o `AgentEmbed` na tela X.
 
 **Você não escreve autenticação nem guarda chave nenhuma.** A conversa roda em
-nome da **pessoa que está conversando** — a mesma identidade da sessão. A
-travessia até a plataforma é feita no servidor, com o segredo que este App já
-tem.
+nome da **pessoa que está conversando** — a mesma identidade da sessão. O
+servidor troca o token dela por um token de plataforma, com o segredo que este
+App já tem, e esse token nunca chega ao navegador: à tela chega só o endereço do
+quadro, com um código de uso único que vence em 120 segundos.
 
 > **Nunca guarde uma chave `vos_live_…` neste App.** É o caminho antigo, e o
-> problema dele é que _parece_ funcionar: o chat responde. O que está errado só
-> aparece depois — **toda** conversa de **todo** usuário roda em nome do dono da
-> chave. A conversa é dele, o consumo é dele, e o histórico diz que foi ele. Se
-> você se pegar pedindo uma chave ao usuário para "ligar o chat", pare: o que
-> falta é vincular um agente no painel, não uma credencial no código.
+> problema dele é que _parece_ funcionar. O que está errado só aparece depois —
+> **toda** conversa de **todo** usuário roda em nome do dono da chave. Se você
+> se pegar pedindo uma chave ao usuário para "ligar o chat", pare: o que falta é
+> vincular um agente no painel, não uma credencial no código.
 
-O que você precisa saber para usar:
+| Quero…                                 | Faça                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------ |
+| a tela de conversa                     | já existe em `/agentes` (`?agente=<apelido>` abre um específico); faça um link |
+| o chat dentro de outra página          | no servidor, `createEmbedSession(session, { agent })`; na tela, `<AgentEmbed>` |
+| saber quais agentes o App oferece      | `listAppAgents(session)` no servidor                                           |
+| chamar um agente **por código**        | `volundFor(session)` no servidor (abaixo)                                      |
+| reagir ao fim de um turno, a artefatos | `onEvent` do `AgentEmbed` (`volund:turn-ended`, `volund:artifact`)             |
+| falar com um agente específico         | o **apelido** (`"suporte"`), nunca um identificador                            |
 
-| Quero…                            | Faça                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| a tela de conversa                | já existe em `/agentes`; faça um link para ela                            |
-| o chat dentro de outra página     | `<AgentChat agents={await listAppAgents(session)} />`                     |
-| saber quais agentes o App oferece | `listAppAgents(session)` no servidor, ou `GET /api/volund/agents` na tela |
-| falar com um agente específico    | o **apelido** (`"suporte"`), nunca um identificador                       |
+**Uma sessão por abertura de tela.** O endereço do quadro não pode ser guardado
+nem reaproveitado: o código dele é de uso único. A página que mostra o chat é
+`force-dynamic` e cria a sessão no servidor a cada vez — copie o padrão de
+`app/agentes/page.tsx`, inclusive o `key={sessão}` no `AgentEmbed`.
+
+**Chamar um agente por código, sem tela** (um resumo ao salvar um pedido, uma
+classificação num job) é no servidor, pelo SDK, em nome da mesma pessoa:
+
+```ts
+import { resolveAgentId, volundFor } from "@/lib/volund/agents";
+
+const volund = await volundFor(session); // @volund-ia/sdk, como a pessoa
+const { agentId } = await resolveAgentId(session, "suporte"); // apelido → agente
+const run = await volund.agents.run({ agentId, input: "Resuma o pedido 123." });
+const { output } = await run.result(); // ou `run.stream()` para os eventos
+```
+
+Isso mora num serviço de `lib/services/` como qualquer outra regra, e nunca num
+componente de cliente: o token do `volundFor` é da pessoa e não vai ao navegador.
 
 **O apelido é o endereço.** Ele é escolhido no painel e é estável; o
-identificador do agente não sai do servidor, de propósito. Escrever um
-identificador no código seria fixar um valor que muda entre ambientes e que
-ninguém consegue ler.
+identificador do agente não sai do servidor, de propósito.
 
 **Acrescentar um agente não exige republicar.** O roteiro é lido em tempo de
-execução: vinculou no painel, aparece aqui em até um minuto. É por isso que este
-contrato não acrescentou nenhuma variável de ambiente.
+execução: vinculou no painel, aparece aqui em até um minuto.
 
 **Quando não há agente nenhum, a tela diz isso** — e não "algo deu errado". Não é
 falha, e tentar de novo não resolve: o que resolve é alguém vincular um agente na
@@ -362,9 +389,20 @@ isso que o usuário nota primeiro.
 `border-border-subtle`…), definidos em `app/globals.css`. Não escreva cor literal:
 ela não dá erro e envelhece calada.
 
-**O tema é escuro, único.** Não há modo claro, não há toggle, e não se escreve
-`dark:` — o bloco `.dark` do shadcn foi removido de propósito. Uma tela com duas
-aparências tem uma que ninguém testou.
+**Claro e escuro, e quem escolhe é o VolundOS.** Dentro do painel o App segue
+o tema que a pessoa escolheu lá; aberto direto, segue o aparelho. O claro é o
+atributo `data-tema="claro"` no `<html>` (`lib/volund/theme.ts`), e os tokens já
+têm os dois valores — por isso **cor sai sempre de token**, e uma tela feita só
+com tokens funciona nos dois sem você fazer nada. Não crie toggle, não use
+`next-themes` e não escreva `dark:` (a classe `.dark` não existe aqui). Para a
+exceção rara que o token não resolve, a variante é `claro:` (`claro:invert`).
+Confira as telas que você fizer nos dois temas.
+
+**A marca é da organização, e vem da plataforma.** Nome, logo, ícone e as cores
+do tema chegam em tempo de execução (`lib/volund/appearance.ts`) e o layout já
+as aplica. Não copie logo nem cor da organização para o código: ela troca no
+painel e o App acompanha sozinho. Para mostrar o logo numa tela,
+`<OrgBrand appearance={await orgAppearance()} />`.
 
 **As fontes já estão no projeto, e não se baixa fonte no build.** Inter e DM Mono
 vivem em `public/fonts/` e são carregadas por `next/font/local` no `layout.tsx`.
