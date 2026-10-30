@@ -1,13 +1,25 @@
 /**
  * A tradução de falha do canal de agentes para HTTP, em UM lugar.
  *
- * As quatro rotas de `app/api/volund/` erram pelos mesmos motivos, e uma cópia
- * por rota divergiria — a que esquecesse de separar "este app não oferece agente
- * nenhum" de "não consegui falar com a plataforma" mostraria "algo deu errado"
- * para quem só precisava vincular um agente no painel.
+ * As rotas de `app/api/volund/` (hoje, a de sessão do chat embutido) erram
+ * pelos mesmos motivos, e uma cópia por rota divergiria — a que esquecesse de
+ * separar "este app não oferece agente nenhum" de "não consegui falar com a
+ * plataforma" mostraria "algo deu errado" para quem só precisava vincular um
+ * agente no painel.
  */
 
-import { AgentChannelError } from "./agents";
+import { AgentChannelError, type AgentChannelErrorCode } from "./agents";
+
+/**
+ * Um status por motivo, num mapa exaustivo: motivo novo em `AgentChannelErrorCode`
+ * sem linha aqui não compila — em vez de cair calado num 503.
+ */
+const STATUS_DO_CODIGO: Record<AgentChannelErrorCode, number> = {
+  sem_agente: 409,
+  agente_desconhecido: 404,
+  conversa_desconhecida: 404,
+  indisponivel: 503,
+};
 
 /**
  * `409`, e não `500`, para `sem_agente`.
@@ -20,7 +32,7 @@ export function agentChannelResponse(err: unknown): Response {
   if (err instanceof AgentChannelError) {
     return Response.json(
       { error: err.code, message: err.message },
-      { status: err.code === "sem_agente" ? 409 : 503 },
+      { status: STATUS_DO_CODIGO[err.code] },
     );
   }
   console.error("[volund] falha inesperada no canal de agentes:", err);

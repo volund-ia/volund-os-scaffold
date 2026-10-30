@@ -3,7 +3,10 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 
 import { FrameBinding } from "@/components/volund/frame-binding";
+import { ThemeBinding } from "@/components/volund/theme-binding";
 import { readAuthConfig } from "@/lib/auth/config";
+import { orgAppearance } from "@/lib/volund/appearance";
+import { THEME_BEFORE_PAINT_SCRIPT } from "@/lib/volund/theme";
 
 import "./globals.css";
 
@@ -56,10 +59,16 @@ const mono = localFont({
   fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
 });
 
-export const metadata: Metadata = {
-  title: "App",
-  description: "Aplicação criada no VolundOS.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const appearance = await orgAppearance();
+  return {
+    title: "App",
+    description: "Aplicação criada no VolundOS.",
+    // O ícone da organização na aba. Sem marca, o padrão do navegador — e não
+    // um ícone inventado.
+    ...(appearance?.iconUrl ? { icons: { icon: appearance.iconUrl } } : {}),
+  };
+}
 
 /**
  * A origem do painel que pode emoldurar esta aplicação, ou `null`.
@@ -78,18 +87,43 @@ function panelOrigin(): string | null {
   }
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const appearance = await orgAppearance();
+  const origin = panelOrigin();
+
   return (
     <html
       lang="pt-BR"
       className={`${sans.variable} ${mono.variable} h-full font-sans antialiased`}
+      // O script abaixo põe `data-tema` no <html> ANTES da hidratação, e o
+      // React reclamaria do atributo que o servidor não mandou. É só nele.
+      suppressHydrationWarning
     >
+      <head>
+        {/* Claro ou escuro antes da primeira pintura (ver lib/volund/theme.ts).
+            Sem ele, quem está no claro veria a página nascer escura e piscar. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BEFORE_PAINT_SCRIPT }} />
+        {/* A marca da organização: as mesmas variáveis do tema, com seletor
+            `html:root`, mais forte que o `:root` de globals.css. O texto já
+            passou por `safeBrandCss` (nada de `</`), e sem marca o tema padrão
+            segue sozinho. */}
+        {appearance?.css ? (
+          <style
+            id="volund-marca"
+            dangerouslySetInnerHTML={{ __html: appearance.css }}
+          />
+        ) : null}
+      </head>
       <body className="bg-background text-foreground flex min-h-full flex-col">
         {children}
+        {/* Quem decide claro ou escuro: o painel, quando emoldura; o aparelho,
+            fora dele. ANTES do `FrameBinding`, porque o painel manda o tema em
+            resposta ao primeiro aviso de rota, e o ouvinte precisa estar de pé. */}
+        <ThemeBinding parentOrigin={origin} />
         {/* O vínculo de rota com o painel que emoldura esta aplicação. Não
             renderiza nada e não faz nada fora de um quadro.
 
@@ -99,7 +133,7 @@ export default function RootLayout({
             useSearchParams", e a vitrine é justamente uma página estática. O
             fallback é `null` porque o componente também é. */}
         <Suspense fallback={null}>
-          <FrameBinding parentOrigin={panelOrigin()} />
+          <FrameBinding parentOrigin={origin} />
         </Suspense>
       </body>
     </html>

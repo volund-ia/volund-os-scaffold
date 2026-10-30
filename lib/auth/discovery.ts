@@ -20,6 +20,12 @@ export interface Discovery {
   userinfo_endpoint: string;
   jwks_uri: string;
   revocation_endpoint?: string;
+  /**
+   * Onde o App lê a marca da organização (contrato 9). Extensão do VolundOS, e
+   * por isso opcional: um provedor que não a anuncia não quebra a descoberta —
+   * `lib/volund/appearance.ts` cai no caminho padrão.
+   */
+  volund_appearance_endpoint?: string;
 }
 
 /** Cinco minutos, o mesmo que o provedor anuncia no `cache-control`. */

@@ -3,6 +3,10 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* O tema claro (contrato 9): `data-tema="claro"` no <html>, a mesma convenção
+   do painel do VolundOS. Para a exceção rara que o token não resolve:
+   `claro:bg-...`. Ver DESIGN.md, "Claro e escuro". */
+@custom-variant claro (&:is([data-tema="claro"] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -77,10 +81,15 @@ body {
   --font-mono: var(--font-mono-local), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ------------------------------------------------------------------------
-     O tema do VolundOS. UM tema — ver DESIGN.md, "dark-mode only".
+     O tema do VolundOS: o ESCURO mora aqui, e é o padrão. O claro é o bloco
+     `:root[data-tema="claro"]` abaixo, com o mesmo conjunto de nomes — ver
+     DESIGN.md, "Claro e escuro". Quem escolhe entre os dois é o VolundOS
+     (lib/volund/theme.ts), e a marca da organização sobrescreve os dois
+     (lib/volund/appearance.ts).
      Espaço OKLch: o mesmo do produto, e é o que faz o crimson manter a
      saturação quando compõe com transparência.
      ------------------------------------------------------------------------ */
+  color-scheme: dark;
 
   --background: oklch(0.07 0.01 12); /* preto quente, levemente crimson */
   --foreground: oklch(0.97 0.005 60);
@@ -135,12 +144,69 @@ body {
   --sidebar-ring: oklch(0.62 0.21 13 / 40%);
 }
 
-/* O bloco `.dark` do shadcn foi REMOVIDO, e não esquecido.
-   O DESIGN.md é explícito: dark-mode only, sem toggle, sem variantes `dark:`. Um
-   segundo tema aqui seria um caminho que ninguém percorre e que envelhece — e
-   pior, convidaria a escrever `dark:` no código, o que faz a tela ter duas
-   aparências das quais só uma é testada. O `@custom-variant dark` acima fica:
-   ele é o que faz um `dark:` remanescente de componente do shadcn não estourar. */
+/* O tema claro (contrato 9). Os pares são os do painel do VolundOS (bloco
+   `html[data-tema="claro"]` do app/globals.css de lá), para o App emoldurado no
+   painel claro não destoar dele. O que não aparece aqui é igual nos dois temas:
+   o crimson (`--primary`, `--accent`, `--ring`, `--chart-*`) e `--destructive`.
+
+   O contraste foi o critério: o texto principal (`--foreground`) e o secundário
+   (`--muted-foreground`, ainda WARM) ficam contra o fundo claro com a mesma
+   folga que têm no escuro; as superfícies e bordas trocam o branco translúcido
+   pelo preto translúcido, na mesma opacidade.
+
+   O seletor é `:root[data-tema="claro"]`, e não `html[data-tema="claro"]` como
+   no painel, por causa da marca da organização (lib/volund/appearance.ts). Ela
+   chega com `html:root{...}` (escuro) e `html:root[data-tema="claro"]{...}`
+   (claro), e a ordem precisa ser estrita nos quatro degraus:
+     :root (0,1,0) < marca escura html:root (0,1,1)
+       < este bloco :root[data-tema] (0,2,0) < marca clara (0,2,1).
+   Com `html[data-tema]` (0,1,1) este bloco EMPATARIA com a marca escura, e no
+   claro uma cor escura da marca podia vencer pela ordem dos arquivos. */
+:root[data-tema="claro"] {
+  color-scheme: light;
+
+  --background: oklch(0.975 0.002 12);
+  --foreground: oklch(0.22 0.006 285);
+
+  /* Sobre o crimson, texto branco: o preto quente do escuro some no claro. */
+  --primary-foreground: oklch(0.99 0 0);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.006 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.006 285);
+
+  --secondary: oklch(0.955 0.004 12);
+  --secondary-foreground: oklch(0.3 0.01 20);
+  --muted: oklch(0.955 0.003 12);
+  --muted-foreground: oklch(0.5 0.015 20);
+  --accent-foreground: oklch(0.99 0 0);
+
+  --border: oklch(0 0 0 / 9%);
+  --input: oklch(0 0 0 / 13%);
+
+  --surface: oklch(0 0 0 / 2%);
+  --surface-elevated: oklch(1 0 0);
+  --surface-interactive: oklch(0 0 0 / 3%);
+  --surface-interactive-hover: oklch(0 0 0 / 6%);
+  --border-subtle: oklch(0 0 0 / 5%);
+  --border-strong: oklch(0 0 0 / 10%);
+
+  --sidebar: oklch(0.954 0.005 12);
+  --sidebar-foreground: oklch(0.22 0.006 285);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.005 12);
+  --sidebar-accent-foreground: oklch(0.22 0.006 285);
+  --sidebar-border: oklch(0 0 0 / 8%);
+}
+
+/* O bloco `.dark` do shadcn continua REMOVIDO, e não esquecido. O escuro é o
+   `:root` e o claro é o atributo `data-tema` — a convenção do painel do
+   VolundOS, que é quem decide o tema e cuja marca já vem escrita para ela. Uma
+   classe `.dark` seria uma TERCEIRA aparência que ninguém liga, e convidaria a
+   escrever `dark:` no código. O `@custom-variant dark` acima fica: ele é o que
+   faz um `dark:` remanescente de componente do shadcn não estourar. Para o que
+   é de um tema só, a variante é `claro:`. */
 
 @layer base {
   * {

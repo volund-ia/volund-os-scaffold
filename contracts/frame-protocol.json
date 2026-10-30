@@ -3,7 +3,8 @@
   "$comment_porque": "O quadro é de outra origem: o painel não consegue LER a URL de dentro dele (`contentDocument` é null, `location` lança SecurityError) — e é essa mesma barreira que torna o `sandbox` seguro. Sem um aviso explícito, a barra de rota do painel só sabia o caminho que ela mesma tinha comandado, e ficava desatualizada assim que a pessoa clicava num link DENTRO da aplicação. Este é o canal que faltava, e ele é de aviso: quem navega continua sendo a aplicação.",
   "$comment_origem": "As duas pontas endereçam a origem exata da outra e recusam qualquer outra. O App conhece a do painel por `VOLUND_OIDC_ISSUER`; o painel conhece a do App pelo endereço que ele mesmo emoldurou. Postar para `*` publicaria a navegação da pessoa para qualquer página que resolvesse emoldurar o App.",
   "$comment_v8": "O contrato 8 não mexe neste protocolo. O número acompanha o do scaffold porque é o mesmo número — ver contracts/README.md e a trava em tests/unit/apps-frame-protocol.test.ts.",
-  "contract": 8,
+  "$comment_v9": "O contrato 9 acrescenta UMA mensagem, `panelToAppTheme`: o painel diz ao App emoldurado se a pessoa está no tema claro ou no escuro, para o App acompanhar o painel em vez do aparelho. Ela vale com as mesmas duas conferências das outras (origem exata do painel e `event.source === window.parent`). As duas mensagens do contrato 7 não mudam.",
+  "contract": 9,
   "appToPanel": {
     "$comment": "Enviada pelo App a cada mudança de rota, e uma vez ao montar. O painel usa para refletir o caminho no endereço dele — nunca para recompor o `src` do quadro, o que criaria laço de recarga.",
     "source": "volund-app",
@@ -20,5 +21,13 @@
       "path": "Caminho + query de destino, sempre começando por `/`."
     }
   },
-  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das duas mensagens é obrigatória para o App funcionar."
+  "panelToAppTheme": {
+    "$comment": "Enviada pelo painel ao receber o PRIMEIRO `route` do App (que o App manda ao montar, e por isso serve de \"estou pronto\"), de novo no load do quadro e a cada troca de tema da pessoa. O App aplica `data-tema=\"claro\"` no <html> para `light` e tira o atributo para `dark`. Recebida a primeira, o App para de seguir `prefers-color-scheme`: quem decide dentro do painel é a escolha da pessoa no Perfil, e o \"Sistema\" dela o painel já resolveu antes de mandar.",
+    "source": "volund-panel",
+    "type": "theme",
+    "fields": {
+      "mode": "`light` ou `dark`. Nunca `system`: nesta direção o valor já vem resolvido. Qualquer outro valor é ignorado."
+    }
+  },
+  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das mensagens é obrigatória para o App funcionar — App que não escuta `theme` segue no tema que já tinha (até o 8, só escuro; no 9, o do aparelho)."
 }

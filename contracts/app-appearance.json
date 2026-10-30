@@ -1,0 +1,29 @@
+{
+  "$comment": "Contrato da MARCA DA ORGANIZAÇÃO entre a plataforma (volund-os) e o scaffold dos Apps (volund-os-scaffold), a partir do contrato 9. Descreve como o App publicado lê nome, logo, ícone e cores da organização dona dele — para a aplicação parecer da organização, e não do scaffold. Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
+  "contract": 9,
+  "endpoint": {
+    "$comment": "O endereço anunciado na descoberta OIDC vale mais que o caminho fixo, como os outros endpoints. O App só aceita o anunciado se ele for da MESMA origem do emissor: o pedido leva o segredo do App.",
+    "discoveryField": "volund_appearance_endpoint",
+    "fallbackPath": "/oauth/app-appearance",
+    "method": "GET",
+    "client_authentication": "client_secret_basic",
+    "cache": "revalidate 300 s (a resposta é da organização, igual para todo mundo que usa o App)"
+  },
+  "response": {
+    "fields": [
+      "name",
+      "logo_url",
+      "icon_url",
+      "primary_color",
+      "avatar_bg_color",
+      "css"
+    ],
+    "css": {
+      "$comment": "Pronto para um <style>: dois blocos com os MESMOS nomes de variável do tema do scaffold e do painel (--primary, --primary-foreground, --ring, --accent, --sidebar-*, --chart-1..5, --background, --card...). O escuro vence o `:root` do scaffold; o claro vence o bloco `:root[data-tema=\"claro\"]` do scaffold. O App recusa (e segue com o tema padrão) `css` que não seja texto ou que contenha `</`, porque ele entra cru dentro de um <style>.",
+      "darkSelector": "html:root",
+      "lightSelector": "html:root[data-tema=\"claro\"]",
+      "forbidden": ["</"]
+    }
+  },
+  "failure": "Qualquer falha (rede, timeout, status != 2xx, formato inesperado) faz o App seguir com o tema padrão do scaffold, sem erro na página."
+}

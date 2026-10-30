@@ -1,6 +1,7 @@
 {
   "$comment": "Contrato do CANAL DE AGENTES entre a plataforma (volund-os) e o scaffold dos Apps (volund-os-scaffold). Descreve como a aplicação publicada atravessa a fronteira de audiência para falar com a plataforma em nome de quem está usando ela — e o que ela recebe de volta. Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
-  "contract": 8,
+  "$comment_v9": "O contrato 9 tira a tela de conversa do scaffold: a conversa passa a ser o chat embutido do VolundOS em modo PESSOA (`embedSession`). A troca e o roteiro nao mudam — a sessao do chat e criada com o MESMO token trocado, e a chamada por codigo no servidor (`headless`) continua pelo SDK. As rotas de conversa do contrato 8 sairam do scaffold e ficam descritas em `legacyProxy`, para quem mantem um App gerado antes.",
+  "contract": 9,
   "exchange": {
     "$comment": "RFC 8693. O App troca o access token da SESSÃO de quem está usando a aplicação (aud = volund:app:<id>) por um token de PLATAFORMA (aud = volund:platform:api). O sujeito continua sendo a pessoa; o `act` diz que foi este App que carregou. Autenticado com o segredo do App, no servidor — o token trocado nunca chega ao navegador.",
     "endpoint": "token_endpoint do documento de descoberta OIDC",
@@ -24,8 +25,101 @@
     "serverOnlyFields": ["agent_id"],
     "onlyEnabled": true
   },
-  "proxy": {
-    "$comment": "As rotas do próprio scaffold. A tela fala com estas; só elas falam com a plataforma.",
+  "embedSession": {
+    "$comment": "A sessão do chat embutido em modo PESSOA. O servidor do App troca o token da sessão de quem está usando a aplicação (`exchange`, acima) e cria a sessão com ele: a conversa nasce DELA, como no contrato 8. Ao navegador chega só `embed_url`.",
+    "authentication": "Bearer <token da troca>",
+    "create": {
+      "method": "POST",
+      "path": "/api/v1/apps/me/embed-sessions",
+      "contentType": "application/json",
+      "cache": "no-store",
+      "body": {
+        "agent": "opcional; o APELIDO do agente (`roster.fields.key`). Sem ele, o padrão do App.",
+        "thread_id": "opcional; uuid de uma conversa da pessoa, para retomar.",
+        "color_mode": "opcional; light | dark | system.",
+        "locale": "opcional; pt-BR | en.",
+        "ttl_seconds": "opcional; inteiro de 300 a 28800."
+      },
+      "bodyFields": ["agent", "thread_id", "color_mode", "locale", "ttl_seconds"],
+      "enums": {
+        "color_mode": ["light", "dark", "system"],
+        "locale": ["pt-BR", "en"]
+      },
+      "ttlSeconds": {
+        "min": 300,
+        "max": 28800
+      },
+      "successStatus": 201,
+      "responseFields": ["session_id", "embed_url", "expires_at", "thread_id"],
+      "embedUrl": "Absoluto, na origem do emissor: `<issuer>/embed/c/<session_id>#code=<código>`. O código é de USO ÚNICO e vence em 120 s — a sessão é criada a cada abertura da tela, nunca guardada. O App recusa `embed_url` fora da origem do emissor."
+    },
+    "revoke": {
+      "method": "DELETE",
+      "path": "/api/v1/apps/me/embed-sessions/{session_id}",
+      "successStatus": 204
+    },
+    "errors": {
+      "not_an_app_token": {
+        "status": 403,
+        "meaning": "O Bearer não é um token de troca de App (ex.: chave vos_live_). Defeito do App, não da pessoa."
+      },
+      "agent_not_found": {
+        "status": 404,
+        "meaning": "O apelido não é oferecido por este App."
+      },
+      "thread_not_found": {
+        "status": 404,
+        "meaning": "A conversa não existe ou não é desta pessoa."
+      },
+      "invalid_request": {
+        "status": 400,
+        "meaning": "Corpo fora do formato acima."
+      }
+    },
+    "errorBody": ["error", "message"],
+    "messages": {
+      "$comment": "As mensagens `postMessage` entre o quadro e o App. Os nomes são os de lib/embed/parent-messages.ts no volund-os (docs/chat-embutido.md, \"Eventos para a aplicação\"). O App aceita só `event.origin` igual à origem do emissor e `event.source` igual à janela do quadro, e posta para a origem exata, nunca `*`.",
+      "fromFrame": [
+        "volund:ready",
+        "volund:thread-created",
+        "volund:turn-started",
+        "volund:turn-ended",
+        "volund:artifact",
+        "volund:session-expiring",
+        "volund:error"
+      ],
+      "toFrame": {
+        "volund:set-color-mode": {
+          "fields": ["mode"],
+          "mode": ["light", "dark", "system"]
+        },
+        "volund:send": {
+          "fields": ["text"]
+        },
+        "volund:new-thread": {
+          "fields": []
+        }
+      },
+      "appBehavior": {
+        "volund:ready": "o App posta `volund:set-color-mode` com o modo atual; e de novo a cada troca de tema do App.",
+        "volund:session-expiring": "o App cria uma sessão nova com o `thread_id` em curso e troca o quadro."
+      }
+    },
+    "appRoute": {
+      "$comment": "A rota do scaffold que a tela usa para RENOVAR (a primeira sessão nasce na página, no servidor).",
+      "renew": "POST /api/volund/embed-session"
+    }
+  },
+  "headless": {
+    "$comment": "Chamar um agente por CÓDIGO, no servidor do App, sem tela: `volundFor(session)` (lib/volund/agents.ts) devolve o cliente do @volund-ia/sdk autenticado com o token da troca, e `resolveAgentId(session, apelido)` resolve o agente pelo roteiro. O token trocado não sai do servidor.",
+    "sdk": "@volund-ia/sdk",
+    "client": "volundFor(session)",
+    "agentResolution": "resolveAgentId(session, key)",
+    "baseUrl": "VOLUND_OIDC_ISSUER"
+  },
+  "legacyProxy": {
+    "$comment": "As rotas de conversa do scaffold no contrato 8 — REMOVIDAS no 9. Um App gerado antes continua tendo-as no próprio código e continua funcionando enquanto a plataforma servir o run por SDK; um App novo não as tem, e o teste do scaffold reprova se alguma voltar. O roteiro (`GET /api/volund/agents`) saiu junto porque ficou sem consumidor: a página lê `listAppAgents` no servidor.",
+    "removedIn": 9,
     "roster": "GET /api/volund/agents",
     "conversation": "POST /api/volund/agents/{key}/stream",
     "approval": "POST /api/volund/approvals/{id}/decide",

@@ -1,6 +1,15 @@
 /**
  * O canal com os agentes que ESTE App oferece a quem usa a aplicação
- * (contrato 8).
+ * (contrato 8; no 9, o caminho HEADLESS de servidor).
+ *
+ * ## Dois usos, um canal
+ *
+ * - **A tela de conversa** é o chat embutido do VolundOS (`lib/volund/embed.ts`,
+ *   contrato 9). Este arquivo entrega a ele a troca de token e o roteiro.
+ * - **Chamar um agente por código, no servidor** (um resumo gerado ao salvar um
+ *   pedido, uma classificação num job): `volundFor(session)` devolve o cliente
+ *   do `@volund-ia/sdk` autenticado como a pessoa, e `resolveAgentId` traduz o
+ *   apelido. Nada disso passa pelo navegador.
  *
  * ## O que muda em relação a guardar uma chave de API
  *
@@ -23,8 +32,9 @@
  *
  * 1. **O token trocado nunca chega ao navegador.** Ele autoriza disparar
  *    agentes na plataforma; entregá-lo ao cliente seria entregar essa
- *    autorização a quem abrir o inspetor. Por isso as telas falam com as rotas
- *    de `app/api/volund/`, e são elas que falam com a plataforma.
+ *    autorização a quem abrir o inspetor. A conversa na tela é o chat embutido
+ *    do VolundOS (`lib/volund/embed.ts`): o servidor troca o token e cria a
+ *    sessão do chat, e ao navegador chega só o endereço do quadro.
  * 2. **O roteiro vem em tempo de execução, não de variável de ambiente.**
  *    Variável só muda no próximo deploy; vincular um agente no painel precisa
  *    aparecer aqui sem republicar nada. É por isso que o contrato 8 não
@@ -87,7 +97,13 @@ export interface AppAgent {
  * "algo deu errado". Confundir os dois faz quem configurou procurar erro onde
  * não há.
  */
-export type AgentChannelErrorCode = "sem_agente" | "indisponivel";
+export type AgentChannelErrorCode =
+  | "sem_agente"
+  | "indisponivel"
+  /** O apelido pedido não é oferecido por este App (chat embutido: `agent_not_found`). */
+  | "agente_desconhecido"
+  /** A conversa pedida não existe, ou não é desta pessoa (`thread_not_found`). */
+  | "conversa_desconhecida";
 
 export class AgentChannelError extends Error {
   readonly code: AgentChannelErrorCode;

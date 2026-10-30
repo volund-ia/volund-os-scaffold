@@ -1,5 +1,8 @@
-// O canal de agentes do App (contrato 8): a travessia da identidade de quem usa
-// a aplicação até a plataforma, e o roteiro do que este App oferece.
+// O canal de agentes do App (contrato 8, mantido no 9): a travessia da
+// identidade de quem usa a aplicação até a plataforma, e o roteiro do que este
+// App oferece. No 9 a tela de conversa é o chat embutido do VolundOS
+// (`tests/volund-embed-sessao.test.ts`); as rotas de conversa do scaffold
+// saíram, e o último caso deste arquivo garante que não voltam.
 //
 // O que estes casos protegem, em uma frase cada:
 //
@@ -22,7 +25,7 @@
 //
 // Rodar: npm test
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { beforeEach, test } from "node:test";
 
 import type { AuthConfig } from "../lib/auth/config";
@@ -44,7 +47,6 @@ import {
   type AppAgent,
 } from "../lib/volund/agents";
 import { agentChannelResponse } from "../lib/volund/channel-http";
-import { corpoDaResposta } from "../app/api/volund/questions/answer/route";
 
 const ISSUER = "https://provedor.exemplo.test";
 const APP_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -429,38 +431,44 @@ test("roteiro em formato inesperado não vira agente sem nome na tela", async (t
   assert.equal(erro.code, "indisponivel");
 });
 
-test("responder e pular são exclusivos, e um corpo que diz os dois é recusado", () => {
-  const respondendo = corpoDaResposta.safeParse({
-    perguntaId: "p1",
-    respostas: { "Qual ambiente?": "Produção" },
-  });
-  assert.equal(respondendo.success, true);
-  // O caso está ARMADO: não basta o corpo ser aceito. As respostas têm de
-  // CHEGAR — era exatamente isso que o `union` anterior descartava.
-  assert.deepEqual(respondendo.success && respondendo.data.respostas, {
-    "Qual ambiente?": "Produção",
-  });
+test("os motivos novos do contrato 9 têm status próprio, e não caem em 503", () => {
+  // 404 para o que a tela pediu errado (apelido, conversa): tentar de novo não
+  // resolve, e "o VolundOS está fora" mandaria a pessoa esperar à toa.
+  for (const [code, status] of [
+    ["agente_desconhecido", 404],
+    ["conversa_desconhecida", 404],
+    ["sem_agente", 409],
+    ["indisponivel", 503],
+  ] as const) {
+    assert.equal(
+      agentChannelResponse(new AgentChannelError(code, "x")).status,
+      status,
+      code,
+    );
+  }
+});
 
-  assert.equal(
-    corpoDaResposta.safeParse({ perguntaId: "p1", pular: true }).success,
-    true,
-  );
+test("as rotas de conversa do contrato 8 saíram, e o contrato diz isso", () => {
+  const legado = (
+    JSON.parse(
+      readFileSync(new URL("../contracts/agent-channel.json", import.meta.url), "utf8"),
+    ) as { legacyProxy: { removedIn: number; conversation: string; roster: string } }
+  ).legacyProxy;
+  assert.equal(legado.removedIn, 9);
+  assert.equal(legado.conversation, "POST /api/volund/agents/{key}/stream");
 
-  // O apontamento da revisão, reproduzido: com o `union` de dois objetos isto
-  // era ACEITO — o segundo membro descartava `respostas` (Zod remove chave
-  // desconhecida por padrão) e a rota chamava `skip`. As escolhas da pessoa
-  // sumiam sem uma palavra.
-  assert.equal(
-    corpoDaResposta.safeParse({
-      perguntaId: "p1",
-      respostas: { "Qual ambiente?": "Produção" },
-      pular: true,
-    }).success,
-    false,
-  );
-
-  // Nenhum dos dois também não diz nada. Continua recusado.
-  assert.equal(corpoDaResposta.safeParse({ perguntaId: "p1" }).success, false);
+  // O chat próprio voltando seria uma segunda tela de conversa, divergindo do
+  // VolundOS a cada recurso novo do chat de lá — o que o contrato 9 existe para
+  // acabar. Quem quer conversa usa o `AgentEmbed`; quem quer agente por código,
+  // `volundFor` no servidor.
+  for (const rel of [
+    "../app/api/volund/agents/[key]/stream/route.ts",
+    "../app/api/volund/approvals/[id]/decide/route.ts",
+    "../app/api/volund/questions/answer/route.ts",
+    "../components/volund/agent-chat.tsx",
+  ]) {
+    assert.equal(existsSync(new URL(rel, import.meta.url)), false, `${rel} voltou`);
+  }
 });
 
 test("os três números de contrato andam juntos", () => {
