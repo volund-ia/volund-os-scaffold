@@ -3,7 +3,7 @@
  *
  * Os nomes são os da plataforma (`lib/embed/parent-messages.ts` e
  * docs/chat-embutido.md, "Eventos para a aplicação", no volund-os) e estão
- * espelhados em `contracts/agent-channel.json`, bloco `embedSession.messages`.
+ * espelhados em `contracts/agent-channel.json`, bloco `embedSession.frame`.
  * Renomear um aqui faz o App simplesmente parar de ouvir — sem erro e sem log.
  *
  * Sem import nenhum: é lido pelo componente de cliente e pelo teste.
@@ -61,4 +61,59 @@ export function readEmbedEvent(
 export function threadIdOf(event: EmbedEvent): string | null {
   const id = event.data.thread_id;
   return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+/** O corpo que o `AgentEmbed` manda a `POST /api/volund/embed-session`. */
+export interface RenewRequestBody {
+  agent?: string;
+  threadId?: string;
+  colorMode: "light" | "dark" | "system";
+  replaces: string;
+}
+
+/**
+ * O pedido de renovação: o mesmo agente, a conversa em curso e a sessão que a
+ * nova substitui.
+ *
+ * Sem `threadId` a sessão nova abriria uma conversa vazia, e a pessoa perderia
+ * o que estava escrevendo; sem `replaces` a antiga ficaria viva até o fim do
+ * prazo. `null` vira ausência: a rota recusaria `threadId: null`.
+ */
+export function renewRequestBody({
+  agent,
+  threadId,
+  colorMode,
+  replaces,
+}: {
+  agent?: string;
+  threadId: string | null;
+  colorMode: "light" | "dark" | "system";
+  replaces: string;
+}): RenewRequestBody {
+  return {
+    agent,
+    threadId: threadId ?? undefined,
+    colorMode,
+    replaces,
+  };
+}
+
+const RENEW_FAILED =
+  "Não consegui renovar a conversa. Recarregue a página para continuar.";
+
+/**
+ * O que fazer quando a renovação foi recusada.
+ *
+ * `conversa_desconhecida` diz que a conversa guardada não serve mais (apagada,
+ * ou de outra pessoa). Pedir de novo com ela seria a mesma recusa para sempre:
+ * o "Abrir de novo" tem de esquecê-la e abrir uma conversa nova.
+ */
+export function renewFailure(body: { error?: unknown; message?: unknown } | null): {
+  message: string;
+  forgetThread: boolean;
+} {
+  return {
+    message: typeof body?.message === "string" ? body.message : RENEW_FAILED,
+    forgetThread: body?.error === "conversa_desconhecida",
+  };
 }

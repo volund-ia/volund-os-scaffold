@@ -44,6 +44,7 @@ import {
   resetAgentChannelCacheForTests,
   resolveAgentId,
   selectAgent,
+  showAgentNav,
   type AppAgent,
 } from "../lib/volund/agents";
 import { agentChannelResponse } from "../lib/volund/channel-http";
@@ -406,7 +407,31 @@ test("apelido que o app não oferece é recusado, e não cai no padrão", async 
     (e: unknown) => e,
   );
   assert.ok(erro instanceof AgentChannelError);
-  assert.equal(erro.code, "sem_agente");
+  // Apelido errado é da tela (404), e não "app sem agente" (409): o roteiro
+  // aqui tem dois agentes. `sem_agente` fica para o roteiro vazio, abaixo.
+  assert.equal(erro.code, "agente_desconhecido");
+  assert.equal(agentChannelResponse(erro).status, 404);
+});
+
+test("a lista aparece com mais de um agente, ou quando a conversa não abriu", () => {
+  const um: AppAgent[] = [
+    { key: "a", name: "A", description: null, avatar: null, isDefault: true },
+  ];
+  const dois: AppAgent[] = [
+    ...um,
+    { key: "b", name: "B", description: null, avatar: null, isDefault: false },
+  ];
+  assert.equal(showAgentNav(dois, false), true);
+  assert.equal(showAgentNav(um, false), false);
+  // Apelido desconhecido com um agente só: a frase diz "Escolha um da lista".
+  assert.equal(showAgentNav(um, true), true);
+  assert.equal(showAgentNav([], true), false);
+
+  const pagina = readFileSync(
+    new URL("../app/agentes/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(pagina, /showAgentNav\(agents, indisponivel !== null\) \? \(\s*<nav/);
 });
 
 test("roteiro vazio é o mesmo estado de app sem agente", async () => {

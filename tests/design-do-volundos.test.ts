@@ -40,7 +40,7 @@ function sourceFiles(dir = root, out: string[] = []): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// 1. O tema é o do VolundOS, e é único
+// 1. O tema é o do VolundOS, escuro por padrão e com o par claro
 // ---------------------------------------------------------------------------
 
 test("o tema padrão é escuro e o acento é o crimson do VolundOS", () => {

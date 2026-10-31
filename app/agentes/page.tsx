@@ -10,6 +10,7 @@ import {
   AgentChannelError,
   listAppAgents,
   selectAgent,
+  showAgentNav,
   type AppAgent,
 } from "@/lib/volund/agents";
 import { orgAppearance } from "@/lib/volund/appearance";
@@ -103,7 +104,7 @@ export default async function Agentes({
 
       {/* Um link por agente, e não um seletor de cliente: trocar de agente é
           abrir OUTRA sessão, e quem a cria é o servidor. */}
-      {agents.length > 1 ? (
+      {showAgentNav(agents, indisponivel !== null) ? (
         <nav aria-label="Assistentes" className="flex flex-wrap gap-2">
           {agents.map((a) => {
             const ativo = a.key === atual?.key;

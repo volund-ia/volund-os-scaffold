@@ -38,7 +38,14 @@ import {
   embedSessionOptionsSchema,
   revokeEmbedSession,
 } from "../lib/volund/embed";
-import { EMBED_EVENTS, readEmbedEvent, threadIdOf } from "../lib/volund/embed-messages";
+import {
+  EMBED_EVENTS,
+  readEmbedEvent,
+  renewFailure,
+  renewRequestBody,
+  threadIdOf,
+} from "../lib/volund/embed-messages";
+import { embedSessionPost } from "../lib/volund/embed-session-http";
 
 const ISSUER = "https://provedor.exemplo.test";
 const APP_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -113,6 +120,8 @@ interface Pedido {
 }
 
 let pedidos: Pedido[] = [];
+/** Toda ida ao provedor, de qualquer endereço (descoberta e troca incluídas). */
+let chamadas = 0;
 let resposta: { status: number; body: unknown } = { status: 201, body: {} };
 
 function respostaBoa(extra: Record<string, unknown> = {}) {
@@ -132,9 +141,11 @@ beforeEach(() => {
   resetDiscoveryCacheForTests();
   resetAgentChannelCacheForTests();
   pedidos = [];
+  chamadas = 0;
   resposta = respostaBoa();
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    chamadas += 1;
     const url = typeof input === "string" ? input : input.toString();
 
     if (url === `${ISSUER}/.well-known/openid-configuration`) {
@@ -412,4 +423,111 @@ test("o componente posta para a origem exata e troca o tema no `ready`", () => {
     fonte,
     /readEmbedEvent\(\s*event,\s*platformOrigin,\s*frameRef\.current\?\.contentWindow,?\s*\)/,
   );
+});
+
+test("renovar leva o agente, a conversa em curso e a sessão substituída", () => {
+  const corpo = renewRequestBody({
+    agent: "suporte",
+    threadId: THREAD,
+    colorMode: "light",
+    replaces: "sessao-0",
+  });
+  assert.equal(corpo.agent, "suporte");
+  assert.equal(corpo.threadId, THREAD);
+  assert.equal(corpo.replaces, "sessao-0");
+  assert.equal(corpo.colorMode, "light");
+  // `null` vira ausência: a rota recusaria `threadId: null` (não é uuid).
+  assert.equal(
+    "threadId" in
+      JSON.parse(
+        JSON.stringify(
+          renewRequestBody({ threadId: null, colorMode: "dark", replaces: "s" }),
+        ),
+      ),
+    false,
+  );
+
+  const fonte = readFileSync(
+    new URL("../components/volund/agent-embed.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(fonte, /JSON\.stringify\(\s*renewRequestBody\(/);
+});
+
+test("renovação recusada por conversa desconhecida esquece a conversa", () => {
+  const conversa = renewFailure({
+    error: "conversa_desconhecida",
+    message: "Não encontrei essa conversa. Comece uma nova.",
+  });
+  assert.equal(conversa.forgetThread, true);
+  assert.equal(conversa.message, "Não encontrei essa conversa. Comece uma nova.");
+
+  // Armado: as outras recusas mantêm a conversa (renovar de novo continua nela).
+  assert.equal(
+    renewFailure({ error: "indisponivel", message: "x" }).forgetThread,
+    false,
+  );
+  assert.equal(renewFailure(null).forgetThread, false);
+  assert.match(renewFailure(null).message, /Não consegui renovar/);
+
+  const fonte = readFileSync(
+    new URL("../components/volund/agent-embed.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    fonte,
+    /if \(falha\.forgetThread\) threadRef\.current = null;\s*setAviso\(falha\.message\)/,
+  );
+});
+
+function pedidoDaTela(body: unknown, contentType = "application/json"): Request {
+  return new Request("https://app.exemplo.test/api/volund/embed-session", {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+test("a rota recusa corpo que não é JSON com 415, sem falar com a plataforma", async () => {
+  const r = await embedSessionPost(
+    pedidoDaTela('{"agent":"suporte"}', "text/plain"),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(r.status, 415);
+  assert.equal(chamadas, 0);
+
+  // Armado: o mesmo corpo como JSON chega à plataforma.
+  const ok = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(ok.status, 201);
+  assert.ok(chamadas > 0);
+});
+
+test("`replaces` encerra a sessão anterior, e só quando é outra", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const deletes = () => pedidos.filter((p) => p.method === "DELETE");
+
+  // A resposta boa cria `sessao-1`; a tela pede para substituir `sessao-0`.
+  const r = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte", replaces: "sessao-0" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(r.status, 201);
+  assert.equal(deletes().length, 1);
+  assert.equal(deletes()[0]?.url, `${ISSUER}${EMBED_SESSIONS_PATH}/sessao-0`);
+
+  // A mesma sessão que acabou de nascer não é encerrada.
+  pedidos = [];
+  const igual = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte", replaces: "sessao-1" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(igual.status, 201);
+  assert.equal(deletes().length, 0);
 });

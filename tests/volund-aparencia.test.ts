@@ -235,3 +235,30 @@ test("o layout injeta o css conferido e o ícone da organização", () => {
   assert.match(layout, /await orgAppearance\(\)/);
   assert.doesNotMatch(layout, /fetch\(/);
 });
+
+test("plataforma pendurada: a descoberta e a marca cabem no mesmo prazo curto", async (t) => {
+  t.mock.method(console, "error", () => {});
+  // Um fetch que nunca responde — mas que, como o de verdade, desiste quando o
+  // sinal do pedido vence. A descoberta tem teto próprio de 5 s; somado ao da
+  // marca, a página esperaria 7,5 s.
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      if (signal.aborted) return reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+
+  // O timer do `AbortSignal.timeout` não segura o processo (é `unref`), e num
+  // servidor de verdade há sempre algo vivo. Aqui não haveria, e o node:test
+  // cancelaria o caso antes do prazo vencer.
+  const vivo = setInterval(() => {}, 1_000);
+  t.after(() => clearInterval(vivo));
+
+  const inicio = performance.now();
+  const a = await loadAppAppearance(config);
+  const levou = performance.now() - inicio;
+
+  assert.equal(a, null);
+  assert.ok(levou < 3_000, `a marca levou ${Math.round(levou)} ms`);
+});

@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   readEmbedEvent,
+  renewFailure,
+  renewRequestBody,
   threadIdOf,
   type EmbedCommand,
   type EmbedEvent,
@@ -87,20 +89,22 @@ export function AgentEmbed({
       const r = await fetch("/api/volund/embed-session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          agent,
-          threadId: threadRef.current ?? undefined,
-          colorMode: modeRef.current,
-          replaces: sessionIdRef.current,
-        }),
+        body: JSON.stringify(
+          renewRequestBody({
+            agent,
+            threadId: threadRef.current,
+            colorMode: modeRef.current,
+            replaces: sessionIdRef.current,
+          }),
+        ),
       });
       const body = (await r.json().catch(() => null)) as
-        (AgentEmbedSession & { message?: string }) | null;
+        (AgentEmbedSession & { error?: string; message?: string }) | null;
       if (!r.ok || !body?.embedUrl) {
-        setAviso(
-          body?.message ??
-            "Não consegui renovar a conversa. Recarregue a página para continuar.",
-        );
+        const falha = renewFailure(body);
+        // A conversa guardada foi recusada: "Abrir de novo" abre uma nova.
+        if (falha.forgetThread) threadRef.current = null;
+        setAviso(falha.message);
         return;
       }
       readyRef.current = false;

@@ -40,6 +40,10 @@ export const APPEARANCE_REVALIDATE_SECONDS = 300;
 /**
  * Curto de propósito: a marca está no caminho de TODA página (é o layout que a
  * busca), e uma plataforma lenta não pode virar um App lento.
+ *
+ * É o teto da busca INTEIRA — descoberta mais marca. A descoberta tem o teto
+ * dela (5 s, o do login), e somar os dois faria a página esperar 7,5 s por um
+ * acabamento com a plataforma pendurada.
  */
 const APPEARANCE_TIMEOUT_MS = 2_500;
 
@@ -100,6 +104,32 @@ function safeImageUrl(value: string | null | undefined): string | null {
 }
 
 /**
+ * A promessa, ou a recusa quando `signal` vence antes dela.
+ *
+ * `loadDiscovery` não recebe sinal (é a mesma do login, com o teto dela), então
+ * o prazo da marca corre por fora: quem espera desiste, e a descoberta termina
+ * sozinha em segundo plano — e ainda aquece o cache para a próxima página.
+ */
+function withinDeadline<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
  * De onde ler a marca: o anunciado na descoberta, se for do PRÓPRIO emissor;
  * senão o caminho padrão.
  *
@@ -107,10 +137,14 @@ function safeImageUrl(value: string | null | undefined): string | null {
  * `Authorization`, e mandá-lo para um host que a descoberta apontasse por
  * engano seria entregar a credencial do App a quem responde nele.
  */
-export async function appearanceEndpoint(config: AuthConfig): Promise<string> {
+export async function appearanceEndpoint(
+  config: AuthConfig,
+  signal?: AbortSignal,
+): Promise<string> {
   const fallback = new URL(APP_APPEARANCE_PATH, config.issuer).toString();
   try {
-    const announced = (await loadDiscovery(config.issuer)).volund_appearance_endpoint;
+    const announced = (await withinDeadline(loadDiscovery(config.issuer), signal))
+      .volund_appearance_endpoint;
     if (!announced) return fallback;
     const url = new URL(announced);
     return url.origin === new URL(config.issuer).origin ? url.toString() : fallback;
@@ -135,13 +169,15 @@ export async function loadAppAppearance(
     return null;
   }
 
+  // Um prazo só, do começo da descoberta ao fim da resposta da marca.
+  const deadline = AbortSignal.timeout(APPEARANCE_TIMEOUT_MS);
   try {
-    const response = await fetch(await appearanceEndpoint(cfg), {
+    const response = await fetch(await appearanceEndpoint(cfg, deadline), {
       headers: { authorization: basicAuthHeader(cfg), accept: "application/json" },
       // A resposta é da organização, igual para todo mundo que usa o App — não
       // carrega nada da pessoa. Por isso pode ficar em cache entre requisições.
       next: { revalidate: APPEARANCE_REVALIDATE_SECONDS },
-      signal: AbortSignal.timeout(APPEARANCE_TIMEOUT_MS),
+      signal: deadline,
     });
     if (!response.ok) {
       console.error(`[volund] aparência da organização respondeu ${response.status}`);

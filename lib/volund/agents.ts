@@ -396,6 +396,17 @@ export function selectAgent(agents: AppAgent[], key?: string | null): AppAgent |
 }
 
 /**
+ * Se a página de conversa mostra a lista de agentes.
+ *
+ * Com mais de um, sempre: é como se troca de agente. Com um só, só quando a
+ * página não abriu a conversa (`indisponivel`) — o apelido pedido não existe e
+ * a frase manda escolher "um da lista", que precisa estar lá.
+ */
+export function showAgentNav(agents: AppAgent[], unavailable: boolean): boolean {
+  return agents.length > 1 || (unavailable && agents.length > 0);
+}
+
+/**
  * Do apelido para o identificador que a plataforma usa, com o roteiro no meio.
  *
  * É esta função que mantém a promessa do apelido: o identificador do agente é
@@ -411,9 +422,12 @@ export async function resolveAgentId(
 ): Promise<{ agent: AppAgent; agentId: string }> {
   const { agents, ids } = await loadRoster(session, config);
   const agent = selectAgent(agents, key);
+  // Roteiro vazio já saiu como `sem_agente` em `loadRoster`; aqui o que falta é
+  // o APELIDO — um link errado, e não um App sem agente. Mesmo motivo (e mesmo
+  // 404) da recusa `agent_not_found` do chat embutido.
   if (!agent) {
     throw new AgentChannelError(
-      "sem_agente",
+      "agente_desconhecido",
       `Este app não oferece nenhum agente chamado "${key}".`,
     );
   }
