@@ -1,6 +1,7 @@
 {
   "$comment": "Contrato do CANAL DE AGENTES entre a plataforma (volund-os) e o scaffold dos Apps (volund-os-scaffold). Descreve como a aplicação publicada atravessa a fronteira de audiência para falar com a plataforma em nome de quem está usando ela — e o que ela recebe de volta. Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
-  "contract": 8,
+  "$comment_v9": "O contrato 9 troca o chat PRÓPRIO do artefato (rotas de proxy em app/api/volund/ e componentes em components/volund/) pelo chat EMBUTIDO do VolundOS em modo pessoa: o servidor do App cria a sessão em `embedSession` com o token da troca, e a tela põe o `embed_url` num <iframe>. A troca e o roteiro não mudam. O bloco `proxy` virou `legacyProxy` (só vale para quem ficou no contrato ≤ 8), e `headless` registra que o @volund-ia/sdk segue para uso de servidor.",
+  "contract": 9,
   "exchange": {
     "$comment": "RFC 8693. O App troca o access token da SESSÃO de quem está usando a aplicação (aud = volund:app:<id>) por um token de PLATAFORMA (aud = volund:platform:api). O sujeito continua sendo a pessoa; o `act` diz que foi este App que carregou. Autenticado com o segredo do App, no servidor — o token trocado nunca chega ao navegador.",
     "endpoint": "token_endpoint do documento de descoberta OIDC",
@@ -24,8 +25,119 @@
     "serverOnlyFields": ["agent_id"],
     "onlyEnabled": true
   },
-  "proxy": {
-    "$comment": "As rotas do próprio scaffold. A tela fala com estas; só elas falam com a plataforma.",
+  "embedSession": {
+    "$comment": "A sessão do chat embutido em MODO PESSOA: quem conversa é a pessoa da sessão do App (o `sub` do token trocado), e não um usuário sombra. Criada pelo SERVIDOR do App; o navegador só recebe o `embed_url`, que carrega um código de uso único no fragmento. A conversa nasce da pessoa, o consumo é dela, e o histórico diz que foi ela — como no contrato 8.",
+    "method": "POST",
+    "path": "/api/v1/apps/me/embed-sessions",
+    "authentication": "Authorization: Bearer <token de plataforma obtido em `exchange`>",
+    "scope": "runs:execute",
+    "contentType": "application/json",
+    "cache": "no-store",
+    "body": {
+      "$comment": "Corpo opcional; todos os campos são opcionais. Sem `agent`, responde o agente padrão do App (o `is_default` do roteiro). Campo fora desta lista é recusado com 400 `invalid_request` (e não ignorado): um campo do modo assinado mandado por engano seria uma regra que a aplicação acha que vale e que ninguém aplica.",
+      "agent": "string de 1 a 100 caracteres: o `key` do roteiro",
+      "thread_id": "uuid: conversa existente a retomar (a que voltou num `thread_id` anterior), desta pessoa, deste agente e deste App",
+      "color_mode": ["light", "dark", "system"],
+      "locale": ["pt-BR", "en"],
+      "ttl_seconds": {
+        "min": 300,
+        "max": 28800,
+        "default": 3600
+      }
+    },
+    "response": {
+      "status": 201,
+      "fields": ["session_id", "embed_url", "expires_at", "thread_id"],
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "embed_url": "Absoluto, na origem do emissor: `<issuer>/embed/c/<session_id>#code=<código>`. O código é de USO ÚNICO e vence em 120 s — a sessão é criada a cada abertura da tela, nunca guardada. O App recusa `embed_url` fora da origem do emissor.",
+      "thread_id": "string|null: a conversa retomada, ou null numa sessão de conversa nova (o id chega depois, em `volund:ready`/`volund:thread-created`)."
+    },
+    "revoke": {
+      "$comment": "Só a sessão do MESMO App e da MESMA pessoa do token. Idempotente: 204 também quando já estava encerrada. A de outro App, de outra pessoa ou inexistente responde 404 `session_not_found`, sem dizer qual. O iframe recebe 401 `session_revoked` no pedido seguinte.",
+      "method": "DELETE",
+      "path": "/api/v1/apps/me/embed-sessions/{sessionId}",
+      "status": 204
+    },
+    "errors": {
+      "$comment": "Corpo `{ error, message }`. Antes destes, a autenticação da superfície v1 responde 401 (sem token ou token inválido) e 403 (token sem `runs:execute`).",
+      "not_an_app_token": {
+        "status": 403,
+        "meaning": "O Bearer não representa um App vivo: chave de API `vos_live_`, ou o App foi arquivado/desativado depois da troca. Defeito de configuração, não da pessoa."
+      },
+      "agent_not_found": {
+        "status": 404,
+        "meaning": "O apelido não é oferecido por este App — fora do roteiro, desligado, arquivado, fora do alcance do token ou sem `use` para a pessoa, sem dizer qual."
+      },
+      "thread_not_found": {
+        "status": 404,
+        "meaning": "A conversa não existe, ou não é desta pessoa, deste agente e deste App."
+      },
+      "session_not_found": {
+        "status": 404,
+        "meaning": "Só no DELETE: a sessão não existe, ou é de outro App ou de outra pessoa."
+      },
+      "invalid_request": {
+        "status": 400,
+        "meaning": "Corpo que não é objeto JSON, campo fora da lista ou valor fora do formato acima."
+      },
+      "internal_error": {
+        "status": 500,
+        "meaning": "Falha da plataforma. A aplicação pode tentar de novo."
+      }
+    },
+    "errorBody": ["error", "message"],
+    "frame": {
+      "$comment": "O App põe o `embed_url` num <iframe>. As mensagens são as do chat embutido (lib/embed/parent-messages.ts, docs/chat-embutido.md), endereçadas à origem exata da outra ponta, nunca `*`. O App aceita só `event.origin` igual à origem do emissor E `event.source` igual à janela do PRÓPRIO quadro.",
+      "element": "iframe",
+      "src": "embed_url",
+      "fromFrame": [
+        "volund:ready",
+        "volund:thread-created",
+        "volund:turn-started",
+        "volund:turn-ended",
+        "volund:artifact",
+        "volund:session-expiring",
+        "volund:error"
+      ],
+      "toFrame": {
+        "type": "volund:set-color-mode",
+        "fields": {
+          "mode": ["light", "dark", "system"]
+        }
+      },
+      "otherToFrame": {
+        "volund:send": {
+          "fields": ["text"]
+        },
+        "volund:new-thread": {
+          "fields": []
+        }
+      },
+      "appBehavior": {
+        "volund:ready": "o App posta `volund:set-color-mode` com o modo atual; e de novo a cada troca de tema do App.",
+        "volund:session-expiring": "chega 2 minutos antes do fim: o App cria uma sessão nova com o `thread_id` em curso e troca o quadro.",
+        "volund:error": "o App oferece abrir de novo (sessão nova)."
+      }
+    },
+    "appRoute": {
+      "$comment": "A rota do scaffold que a tela usa para RENOVAR; a primeira sessão nasce na página, no servidor.",
+      "renew": "POST /api/volund/embed-session"
+    }
+  },
+  "headless": {
+    "$comment": "Sem tela: o @volund-ia/sdk segue valendo para uso de SERVIDOR (uma tarefa de fundo, uma rota de API do App que precisa de uma resposta do agente). Ele fala com /api/v1 com o mesmo token de `exchange`; o que saiu do artefato no 9 foi só o chat próprio que era montado em cima dele.",
+    "package": "@volund-ia/sdk",
+    "helper": "volundFor",
+    "agentResolution": "resolveAgentId",
+    "baseUrl": "VOLUND_OIDC_ISSUER",
+    "serverOnly": true
+  },
+  "legacyProxy": {
+    "$comment": "contrato ≤ 8: o scaffold 9 não tem mais o chat próprio. Fica descrito porque App publicado antes do 9 continua com estas rotas no ar, e não existe atualização automática de scaffold.",
+    "$comment_rotas": "As rotas do próprio scaffold. A tela fala com estas; só elas falam com a plataforma.",
+    "removedIn": 9,
     "roster": "GET /api/volund/agents",
     "conversation": "POST /api/volund/agents/{key}/stream",
     "approval": "POST /api/volund/approvals/{id}/decide",

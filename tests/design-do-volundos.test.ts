@@ -11,7 +11,8 @@
 //
 // O que se guarda:
 //
-//   1. o tema é o do VolundOS (fundo escuro, crimson) e é ÚNICO;
+//   1. o tema é o do VolundOS (fundo escuro, crimson), com o par claro do
+//      contrato 9 no atributo `data-tema` — e nunca na classe `.dark`;
 //   2. nenhuma fonte é buscada na rede durante o build;
 //   3. o `DESIGN.md` existe e é lido pela plataforma — ele é o que entra no
 //      system prompt do agente, e sem arquivo não há diretriz;
@@ -39,10 +40,10 @@ function sourceFiles(dir = root, out: string[] = []): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// 1. O tema é o do VolundOS, e é único
+// 1. O tema é o do VolundOS, escuro por padrão e com o par claro
 // ---------------------------------------------------------------------------
 
-test("o tema é escuro e o acento é o crimson do VolundOS", () => {
+test("o tema padrão é escuro e o acento é o crimson do VolundOS", () => {
   const css = read("app/globals.css");
 
   // O crimson do VolundOS, no valor que a PLATAFORMA usa — é o que faz um App
@@ -67,15 +68,102 @@ test("o tema é escuro e o acento é o crimson do VolundOS", () => {
   );
 });
 
-test("não existe um SEGUNDO tema", () => {
+/** O corpo do bloco do tema claro, ou `null` se ele não existir. */
+function blocoClaro(css: string): string | null {
+  const m = /^:root\[data-tema="claro"\]\s*\{([^}]*)\}/m.exec(css);
+  return m?.[1] ?? null;
+}
+
+test("o tema claro existe, no atributo `data-tema`, e é claro de verdade", () => {
   const css = read("app/globals.css");
-  // O bloco `.dark` foi removido de propósito: dark-mode only. Ele voltando
-  // significa duas aparências, das quais só uma é olhada.
+  const claro = blocoClaro(css);
+  assert.ok(claro, 'o bloco `:root[data-tema="claro"]` sumiu do globals.css');
+
+  // `color-scheme` acompanha: sem ele, barra de rolagem e campo nativo ficam
+  // escuros sobre a página clara.
+  assert.match(claro, /color-scheme:\s*light/);
+  assert.match(css, /:root\s*\{[^}]*color-scheme:\s*dark/);
+
+  // O fundo do claro é CLARO — um bloco que só repetisse o escuro passaria na
+  // asserção de existência acima.
+  const fundo = /--background:\s*oklch\((0\.\d+|1)\b/.exec(claro);
+  assert.ok(fundo?.[1], "o bloco claro não declara --background");
+  assert.ok(Number(fundo[1]) > 0.9, `o fundo do claro tem luminosidade ${fundo[1]}`);
+
+  // Os tokens que o DESIGN.md manda usar têm par no claro. Um que faltasse
+  // ficaria com o valor do escuro (branco translúcido) sobre fundo branco — some.
+  for (const token of [
+    "--foreground",
+    "--card",
+    "--muted-foreground",
+    "--border",
+    "--surface",
+    "--surface-elevated",
+    "--surface-interactive",
+    "--surface-interactive-hover",
+    "--border-subtle",
+    "--border-strong",
+  ]) {
+    assert.ok(
+      claro.includes(`${token}:`),
+      `o token ${token} não tem par no tema claro`,
+    );
+  }
+  // E nenhum branco translúcido sobrou nele.
+  assert.doesNotMatch(
+    claro,
+    /oklch\(1 0 0 \//,
+    "o claro tem branco translúcido do escuro",
+  );
+
+  // A variante para a exceção rara: `claro:`, na mesma convenção do painel.
+  assert.match(css, /@custom-variant claro \(&:is\(\[data-tema="claro"\] \*\)\);/);
+});
+
+test("o seletor do claro fica entre as duas camadas da marca da organização", () => {
+  // A marca chega com `html:root` (0,1,1) e `html:root[data-tema="claro"]`
+  // (0,2,1) — contracts/app-appearance.json. O claro do scaffold precisa vencer
+  // a marca ESCURA e perder para a marca CLARA: com `html[data-tema="claro"]`
+  // (0,1,1) ele empataria com a escura, e quem ganha passaria a ser a ordem dos
+  // arquivos.
+  const css = read("app/globals.css");
+  assert.doesNotMatch(css, /^html\[data-tema="claro"\]\s*\{/m);
+  const contrato = JSON.parse(read("contracts/app-appearance.json")) as {
+    response: { cssSelectors: { dark: string; light: string } };
+  };
+  assert.equal(contrato.response.cssSelectors.dark, "html:root");
+  assert.equal(contrato.response.cssSelectors.light, 'html:root[data-tema="claro"]');
+});
+
+test("a classe `.dark` continua de fora — o claro é o atributo, não um segundo tema por classe", () => {
+  const css = read("app/globals.css");
+  // O bloco `.dark` do shadcn voltando significaria uma TERCEIRA aparência, que
+  // ninguém liga: quem escolhe o tema é o VolundOS, pelo atributo.
   assert.doesNotMatch(
     css,
     /^\.dark\s*\{/m,
-    "o bloco `.dark` voltou — o tema é único, ver DESIGN.md",
+    "o bloco `.dark` voltou — o claro é `data-tema`, ver DESIGN.md",
   );
+  // E ninguém volta a pôr a classe no <html>, nem o `next-themes` que a põe.
+  const culpados = sourceFiles().filter((f) =>
+    /from ["']next-themes["']|classList\.(add|toggle)\(["']dark["']/.test(read(f)),
+  );
+  assert.deepEqual(
+    culpados,
+    [],
+    `estes arquivos usam a classe .dark: ${culpados.join(", ")}`,
+  );
+});
+
+test("o tema é aplicado antes da primeira pintura", () => {
+  // Sem o script no <head>, quem está no claro vê a página nascer escura e
+  // piscar na hidratação.
+  const layout = read("app/layout.tsx");
+  assert.match(
+    layout,
+    /<script dangerouslySetInnerHTML=\{\{ __html: THEME_BEFORE_PAINT_SCRIPT \}\} \/>/,
+  );
+  assert.match(layout, /suppressHydrationWarning/);
 });
 
 test("as superfícies semânticas existem, para ninguém inventar `bg-white/[0.03]`", () => {

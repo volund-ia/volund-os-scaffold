@@ -4,10 +4,40 @@ A aparência deste app não é escolha livre: ele vive dentro do VolundOS e prec
 parecer parte dele. As regras abaixo já estão implementadas no projeto — este
 arquivo diz o que usar e, principalmente, o que **não** fazer.
 
-O tema é **escuro, único**. Não existe modo claro, não existe toggle, não se
-escreve `dark:`. Uma tela com duas aparências tem uma que ninguém testou.
+O tema tem **claro e escuro, e quem escolhe é o VolundOS** — não o App, e não
+um botão dentro dele. A marca (logo, nome e cores) é **da organização**, e também
+vem da plataforma. As duas seções logo abaixo dizem o que isso pede de cada tela.
 
 ---
+
+## Claro e escuro
+
+O escuro é o padrão (`:root` de `app/globals.css`); o claro é o atributo
+`data-tema="claro"` no `<html>`, a mesma convenção do painel do VolundOS. Dentro
+do painel, o App segue o tema que a pessoa escolheu lá; aberto direto, segue o
+aparelho (`prefers-color-scheme`). Isso já está ligado no layout — você não faz
+nada.
+
+- **Toda cor sai de token**, e cada token tem os dois valores. Uma tela feita só
+  com tokens funciona nos dois temas sem uma linha a mais.
+- **Não escreva `dark:`** e não crie a classe `.dark`: ela não existe aqui. Nada
+  de toggle de tema, nem de `next-themes`.
+- Para a exceção rara que o token não resolve (um logo branco que precisa
+  inverter no claro), a variante é `claro:` — `claro:invert`.
+- Confira a tela nos dois temas antes de dizer que está pronta. No devtools,
+  `document.documentElement.dataset.tema = "claro"` troca na hora.
+
+## A marca da organização
+
+Nome, logo, ícone e as cores do tema vêm da plataforma
+(`lib/volund/appearance.ts`), e o layout já aplica: as cores entram nas MESMAS
+variáveis dos tokens, e o ícone vira o da aba. Por isso:
+
+- **não copie o logo nem a cor da organização para o código** — ela muda no
+  painel, e o App acompanha sozinho;
+- para mostrar o logo, `<OrgBrand appearance={await orgAppearance()} />`;
+- `primary` pode não ser o crimson: é a cor da organização quando ela tem uma.
+  A regra da próxima seção vale para qualquer que seja a cor.
 
 ## Cores: os tokens, nunca o literal
 
@@ -22,8 +52,9 @@ escreve `dark:`. Uma tela com duas aparências tem uma que ninguém testou.
 <div style={{ background: "rgba(255,255,255,0.03)" }}>
 ```
 
-Cor literal quebra na primeira vez que o tema muda, e some do radar porque não dá
-erro. Os tokens estão em `app/globals.css`:
+Cor literal quebra na primeira vez que o tema muda — e agora o tema muda a cada
+pessoa, entre claro e escuro e com a marca de cada organização. Ela some do
+radar porque não dá erro. Os tokens estão em `app/globals.css`:
 
 | token                                               | para quê                                       |
 | --------------------------------------------------- | ---------------------------------------------- |
@@ -38,8 +69,9 @@ erro. Os tokens estão em `app/globals.css`:
 
 ## O crimson tem peso
 
-`primary` é o crimson do VolundOS — `oklch(0.62 0.21 13)`, o MESMO valor que o
-produto usa — e é o **único** acento intenso. Ele fica perto de `#ED3B62`, mas não
+`primary` é, por padrão, o crimson do VolundOS — `oklch(0.62 0.21 13)`, o MESMO
+valor que o produto usa — e é o **único** acento intenso (com a marca da
+organização, é a cor dela, e a regra é a mesma). Ele fica perto de `#ED3B62`, mas não
 é a conversão exata (essa seria `oklch(0.6308 0.2126 13.67)`): o que importa aqui é
 bater com o token da plataforma, não com o hexadecimal. Se algum dia os dois
 divergirem, o valor da plataforma ganha. Ele marca a ação principal
@@ -144,6 +176,7 @@ problema é o cartão.
 ## Antes de dizer que a tela está pronta
 
 - [ ] nenhuma cor literal — só tokens;
+- [ ] conferida no claro e no escuro, sem `dark:`;
 - [ ] um único `bg-primary` na tela, na ação principal;
 - [ ] toda ação assíncrona com spinner e `disabled`;
 - [ ] carregando mostra skeleton, vazio mostra empty state;

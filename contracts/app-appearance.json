@@ -1,0 +1,59 @@
+{
+  "$comment": "Contrato da APARÊNCIA white-label que um App lê da plataforma (volund-os ↔ volund-os-scaffold). Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
+  "$comment_fonte": "A fonte é a MESMA do chat embutido: cores e imagens de resolveEmbedTheme (lib/embed/theme.ts), nome e fundo de avatar de readOrgBranding (lib/branding/org-branding.ts), CSS de themeCss (lib/themes/css.ts). O chat do App é o chat embutido em modo pessoa; duas leituras da marca divergiriam na primeira mudança de regra de uma delas.",
+  "contract": 9,
+  "method": "GET",
+  "path": "/oauth/app-appearance",
+  "discovery": "volund_appearance_endpoint",
+  "$comment_endereco": "O endereço anunciado em `volund_appearance_endpoint` na descoberta OIDC vale mais que `path`, como os outros endpoints; `path` é o recuo quando a descoberta não o anuncia. O App só aceita o anunciado se for da MESMA origem do emissor: o pedido leva credencial.",
+  "authentication": {
+    "$comment": "Chamado pelo SERVIDOR do App, nunca pelo navegador: não há CORS. Só o cliente do PRÓPRIO App (owner app) é aceito; cliente externo, de registro dinâmico ou revogado recebe a mesma recusa de cliente desconhecido.",
+    "bearer": {
+      "header": "Authorization: Bearer <access token da sessão do App>",
+      "query": "client_id",
+      "audience": "o recurso do App (volund:app:<appId>), lido do registro do client_id",
+      "appIdMustMatch": true,
+      "error": "invalid_token"
+    },
+    "basic": {
+      "header": "Authorization: Basic base64(client_id:client_secret)",
+      "use": "SSR de páginas públicas do App, sem pessoa e sem token",
+      "error": "invalid_client"
+    },
+    "missing": "invalid_token"
+  },
+  "response": {
+    "status": 200,
+    "contentType": "application/json",
+    "fields": {
+      "name": "string. Nome de marca da organização; sem marca própria, o nome padrão da plataforma.",
+      "logo_url": "string|null. Logo, já filtrado pela allowlist de origem.",
+      "icon_url": "string|null. Ícone, já filtrado pela allowlist de origem.",
+      "primary_color": "\"#rrggbb\" minúsculo. Sem marca própria, o coral padrão (#ed3b62).",
+      "avatar_bg_color": "\"#rrggbb\" minúsculo, ou null quando a organização não escolheu.",
+      "css": "string. Vazia quando a organização não tem cor própria. Senão, um bloco `html:root{...}` (tema escuro) seguido, quando há cor primária, de `html:root[data-tema=\"claro\"]{...}` (tema claro), só com custom properties (--primary, --primary-foreground, --primary-soft, --primary-tint, --primary-hover, --primary-bright, --agent-avatar-bg, ...). O App injeta num <style> e marca <html data-tema=\"claro\"> no claro."
+    },
+    "cssSelectors": {
+      "dark": "html:root",
+      "light": "html:root[data-tema=\"claro\"]"
+    },
+    "cssForbidden": ["</"]
+  },
+  "cache": {
+    "Cache-Control": "private, max-age=300",
+    "Vary": "Authorization"
+  },
+  "errors": {
+    "401": "invalid_token (Bearer) ou invalid_client (Basic), com WWW-Authenticate",
+    "500": "server_error"
+  },
+  "app": {
+    "$comment": "O lado do App (scaffold, lib/volund/appearance.ts).",
+    "authentication": "basic",
+    "revalidateSeconds": 300,
+    "timeoutMs": 2500,
+    "css": "Entra num <style id=\"volund-marca\"> no <head> só se for texto não vazio, sem `</` e com até 64 KB; senão o App segue com os próprios tokens.",
+    "images": "`logo_url` e `icon_url` só como endereço http(s) absoluto; `icon_url` vira o ícone da aba.",
+    "failure": "Qualquer falha (rede, timeout, status != 2xx, formato inesperado) faz o App seguir com o tema padrão do scaffold, sem erro na página."
+  }
+}

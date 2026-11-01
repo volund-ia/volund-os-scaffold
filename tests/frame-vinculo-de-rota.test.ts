@@ -1,5 +1,6 @@
-// O vínculo de rota com o painel que emoldura esta aplicação (contrato 7), e a
-// entrada pela raiz quando já existe sessão.
+// O vínculo de rota com o painel que emoldura esta aplicação (contrato 7), o
+// tema que o painel manda (contrato 9), e a entrada pela raiz quando já existe
+// sessão.
 //
 // Os dois assuntos moram no mesmo arquivo porque são o mesmo defeito visto de
 // dois lados: abrir a aplicação dentro do painel era uma experiência que mentia.
@@ -15,9 +16,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import vm from "node:vm";
 
 import { APP_HOME_PATH, AUTH_LOGIN_PATH } from "../lib/auth/config";
 import { isPublicRoute } from "../lib/auth/route-policy";
+import {
+  THEME_ATTRIBUTE,
+  THEME_BEFORE_PAINT_SCRIPT,
+  THEME_LIGHT_VALUE,
+  readPanelThemeMessage,
+} from "../lib/volund/theme";
 
 const raiz = process.cwd();
 const ler = (rel: string) => readFileSync(path.join(raiz, rel), "utf8");
@@ -32,6 +40,7 @@ test("o protocolo do quadro declara o mesmo contrato do manifest", () => {
     contract: number;
     appToPanel: { source: string; type: string };
     panelToApp: { source: string; type: string };
+    panelToAppTheme: { source: string; type: string; fields: Record<string, string> };
   };
   const claims = JSON.parse(ler("contracts/auth-claims.json")) as { contract: number };
 
@@ -47,6 +56,10 @@ test("o protocolo do quadro declara o mesmo contrato do manifest", () => {
   assert.equal(protocolo.appToPanel.type, "route");
   assert.equal(protocolo.panelToApp.source, "volund-panel");
   assert.equal(protocolo.panelToApp.type, "navigate");
+  // Contrato 9: o tema que o painel manda.
+  assert.equal(protocolo.panelToAppTheme.source, "volund-panel");
+  assert.equal(protocolo.panelToAppTheme.type, "theme");
+  assert.deepEqual(Object.keys(protocolo.panelToAppTheme.fields), ["mode"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -74,6 +87,152 @@ test("caminho que sairia do site não é aceito como rota", () => {
   // mesma.
   assert.match(fonte, /\[\/\\\\\]\{2\}/);
   assert.match(fonte, /startsWith\("\/"\)/);
+});
+
+// ---------------------------------------------------------------------------
+// 2b. O tema que o painel manda (contrato 9)
+// ---------------------------------------------------------------------------
+
+const PAINEL = "https://painel.exemplo.test";
+const pai = { nome: "a janela que emoldura" };
+const irmao = { nome: "outro quadro do mesmo painel" };
+const tema = (mode: unknown) => ({ source: "volund-panel", type: "theme", mode });
+
+test("o tema do painel é aceito da origem e da janela certas", () => {
+  assert.equal(
+    readPanelThemeMessage(
+      { origin: PAINEL, source: pai, data: tema("light") },
+      PAINEL,
+      pai,
+    ),
+    "light",
+  );
+  assert.equal(
+    readPanelThemeMessage(
+      { origin: PAINEL, source: pai, data: tema("dark") },
+      PAINEL,
+      pai,
+    ),
+    "dark",
+  );
+});
+
+test("e recusado de qualquer outra origem, janela ou forma", () => {
+  // Cada caso tem UMA coisa errada, e o caso certo acima prova que o resto
+  // passaria — sem ele, uma função que recusasse tudo passaria aqui também.
+  const casos: Array<[string, { origin: string; source: unknown; data: unknown }]> = [
+    [
+      "outra origem",
+      { origin: "https://intruso.test", source: pai, data: tema("light") },
+    ],
+    ["quadro irmão", { origin: PAINEL, source: irmao, data: tema("light") }],
+    [
+      "outro tipo",
+      { origin: PAINEL, source: pai, data: { ...tema("light"), type: "navigate" } },
+    ],
+    [
+      "outra fonte",
+      { origin: PAINEL, source: pai, data: { ...tema("light"), source: "volund-app" } },
+    ],
+    [
+      "system não vem nesta direção",
+      { origin: PAINEL, source: pai, data: tema("system") },
+    ],
+    ["valor inventado", { origin: PAINEL, source: pai, data: tema("sepia") }],
+    ["sem corpo", { origin: PAINEL, source: pai, data: null }],
+  ];
+  for (const [nome, evento] of casos) {
+    assert.equal(readPanelThemeMessage(evento, PAINEL, pai), null, nome);
+  }
+  // Sem origem do painel conhecida (ambiente não injetado), nada é aceito.
+  assert.equal(
+    readPanelThemeMessage(
+      { origin: PAINEL, source: pai, data: tema("light") },
+      null,
+      pai,
+    ),
+    null,
+  );
+});
+
+test("o vínculo de tema usa a regra conferida, e escuta antes do aviso de rota", () => {
+  const fonte = ler("components/volund/theme-binding.tsx");
+  assert.match(fonte, /readPanelThemeMessage\(event, parentOrigin, window\.parent\)/);
+  // Fora do painel, o aparelho manda, ao vivo.
+  assert.match(fonte, /prefers-color-scheme: light/);
+  assert.match(fonte, /addEventListener\("change"/);
+
+  // O painel responde ao PRIMEIRO `route`; o ouvinte de tema precisa estar
+  // montado antes do componente que manda o `route`.
+  const layout = ler("app/layout.tsx");
+  const tema = layout.indexOf("<ThemeBinding");
+  const rota = layout.indexOf("<FrameBinding");
+  assert.ok(tema > 0 && rota > 0, "o layout não monta os dois vínculos");
+  assert.ok(tema < rota, "o ThemeBinding tem de vir antes do FrameBinding");
+});
+
+test("o script de antes da pintura aplica o mesmo atributo que o painel do VolundOS", () => {
+  assert.equal(THEME_ATTRIBUTE, "data-tema");
+  assert.equal(THEME_LIGHT_VALUE, "claro");
+  assert.ok(THEME_BEFORE_PAINT_SCRIPT.includes('"data-tema"'));
+  assert.ok(THEME_BEFORE_PAINT_SCRIPT.includes('"claro"'));
+  assert.ok(THEME_BEFORE_PAINT_SCRIPT.includes("prefers-color-scheme: light"));
+  // Ele vai inline no <head>: não pode fechar a tag em que está.
+  assert.ok(!THEME_BEFORE_PAINT_SCRIPT.includes("</"));
+});
+
+/**
+ * Roda o script de antes da pintura numa janela de mentira e devolve o
+ * atributo que ele deixou no <html>. Rodar, e não só ler o texto: um script com
+ * a lógica invertida conteria as mesmas palavras.
+ */
+function temaAplicado(opts: {
+  aparelhoClaro: boolean;
+  emoldurado: boolean;
+  guardado?: string | null;
+  inicial?: string | null;
+}): string | null {
+  const attrs = new Map<string, string>();
+  if (opts.inicial) attrs.set(THEME_ATTRIBUTE, opts.inicial);
+  const janela: Record<string, unknown> = {
+    matchMedia: (q: string) => ({ matches: q.includes("light") && opts.aparelhoClaro }),
+  };
+  janela.parent = opts.emoldurado ? {} : janela;
+  vm.runInNewContext(THEME_BEFORE_PAINT_SCRIPT, {
+    window: janela,
+    sessionStorage: { getItem: () => opts.guardado ?? null },
+    document: {
+      documentElement: {
+        setAttribute: (k: string, v: string) => attrs.set(k, v),
+        removeAttribute: (k: string) => attrs.delete(k),
+      },
+    },
+  });
+  return attrs.get(THEME_ATTRIBUTE) ?? null;
+}
+
+test("antes da pintura: fora do painel vale o aparelho; dentro, o último tema do painel", () => {
+  assert.equal(temaAplicado({ aparelhoClaro: true, emoldurado: false }), "claro");
+  assert.equal(
+    temaAplicado({ aparelhoClaro: false, emoldurado: false, inicial: "claro" }),
+    null,
+  );
+  // Dentro do painel, o que ele mandou da última vez vence o aparelho...
+  assert.equal(
+    temaAplicado({ aparelhoClaro: false, emoldurado: true, guardado: "light" }),
+    "claro",
+  );
+  assert.equal(
+    temaAplicado({ aparelhoClaro: true, emoldurado: true, guardado: "dark" }),
+    null,
+  );
+  // ...e sem nada guardado (primeira abertura), o aparelho até o painel responder.
+  assert.equal(temaAplicado({ aparelhoClaro: true, emoldurado: true }), "claro");
+  // O guardado só vale emoldurado: numa aba solta quem manda é o aparelho.
+  assert.equal(
+    temaAplicado({ aparelhoClaro: true, emoldurado: false, guardado: "dark" }),
+    "claro",
+  );
 });
 
 // ---------------------------------------------------------------------------

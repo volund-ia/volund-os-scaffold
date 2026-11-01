@@ -1,0 +1,533 @@
+// A sessão do chat embutido do VolundOS em modo pessoa (contrato 9).
+//
+// O que estes casos protegem, em uma frase cada:
+//
+//  - O pedido é conferido contra `contracts/agent-channel.json` (`embedSession`),
+//    e não contra literais repetidos aqui: caminho, método, Bearer da TROCA,
+//    `cache: "no-store"` e os nomes do corpo.
+//  - O corpo leva só o que foi pedido, com os nomes da plataforma
+//    (`thread_id`, `color_mode`...) — e não os do código (`threadId`).
+//  - As recusas nomeadas viram motivo próprio; as que são defeito deste lado
+//    viram indisponibilidade.
+//  - Um `embed_url` fora da origem do emissor é recusado: o quadro só abre o
+//    VolundOS.
+//  - Os nomes das mensagens do quadro são os do contrato (os da plataforma).
+//
+// O provedor é de mentira, com `globalThis.fetch` trocado — mesmo harness de
+// `tests/volund-canal-do-agente.test.ts`, repetido de propósito: cada teste
+// deste scaffold roda sozinho.
+//
+// Rodar: npm test
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { beforeEach, test } from "node:test";
+
+import type { AuthConfig } from "../lib/auth/config";
+import { base64UrlEncode } from "../lib/auth/crypto";
+import { resetDiscoveryCacheForTests } from "../lib/auth/discovery";
+import type { Session } from "../lib/auth/session";
+import {
+  AgentChannelError,
+  resetAgentChannelCacheForTests,
+} from "../lib/volund/agents";
+import {
+  EMBED_SESSIONS_PATH,
+  EMBED_TTL_MAX_SECONDS,
+  EMBED_TTL_MIN_SECONDS,
+  createEmbedSession,
+  embedSessionOptionsSchema,
+  revokeEmbedSession,
+} from "../lib/volund/embed";
+import {
+  EMBED_EVENTS,
+  readEmbedEvent,
+  renewFailure,
+  renewRequestBody,
+  threadIdOf,
+} from "../lib/volund/embed-messages";
+import { embedSessionPost } from "../lib/volund/embed-session-http";
+
+const ISSUER = "https://provedor.exemplo.test";
+const APP_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const THREAD = "3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c";
+
+const config: AuthConfig = {
+  issuer: ISSUER,
+  clientId: "client-do-app",
+  clientSecret: "segredo",
+  appId: APP_ID,
+};
+
+const contrato = JSON.parse(
+  readFileSync(new URL("../contracts/agent-channel.json", import.meta.url), "utf8"),
+) as {
+  contract: number;
+  embedSession: {
+    method: string;
+    path: string;
+    authentication: string;
+    contentType: string;
+    cache: string;
+    body: {
+      agent: string;
+      thread_id: string;
+      color_mode: string[];
+      locale: string[];
+      ttl_seconds: { min: number; max: number; default: number };
+    };
+    response: { status: number; fields: string[] };
+    revoke: { method: string; path: string; status: number };
+    errors: Record<string, { status: number }>;
+    errorBody: string[];
+    frame: {
+      fromFrame: string[];
+      toFrame: { type: string; fields: { mode: string[] } };
+      otherToFrame: Record<string, { fields: string[] }>;
+    };
+  };
+};
+const embed = contrato.embedSession;
+
+function sessao(userId: string, accessToken: string): Session {
+  return {
+    userId,
+    orgId: "org-1",
+    appId: APP_ID,
+    email: null,
+    name: null,
+    roles: [],
+    permissions: [],
+    subjectType: "user",
+    actor: null,
+    accessToken,
+  };
+}
+
+function tokenComExp(exp: number): string {
+  const parte = (o: unknown) =>
+    base64UrlEncode(new TextEncoder().encode(JSON.stringify(o)));
+  return `${parte({ alg: "none" })}.${parte({ exp })}.assinatura`;
+}
+
+const TOKEN_TROCADO = tokenComExp(Math.floor(Date.now() / 1000) + 600);
+
+interface Pedido {
+  url: string;
+  method: string;
+  headers: Headers;
+  cache: RequestCache | undefined;
+  body: unknown;
+}
+
+let pedidos: Pedido[] = [];
+/** Toda ida ao provedor, de qualquer endereço (descoberta e troca incluídas). */
+let chamadas = 0;
+let resposta: { status: number; body: unknown } = { status: 201, body: {} };
+
+function respostaBoa(extra: Record<string, unknown> = {}) {
+  return {
+    status: embed.response.status,
+    body: {
+      session_id: "sessao-1",
+      embed_url: `${ISSUER}/embed/c/sessao-1#code=abc`,
+      expires_at: "2026-10-30T12:00:00.000Z",
+      thread_id: THREAD,
+      ...extra,
+    },
+  };
+}
+
+beforeEach(() => {
+  resetDiscoveryCacheForTests();
+  resetAgentChannelCacheForTests();
+  pedidos = [];
+  chamadas = 0;
+  resposta = respostaBoa();
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    chamadas += 1;
+    const url = typeof input === "string" ? input : input.toString();
+
+    if (url === `${ISSUER}/.well-known/openid-configuration`) {
+      return Response.json({
+        issuer: ISSUER,
+        authorization_endpoint: `${ISSUER}/oauth/authorize`,
+        token_endpoint: `${ISSUER}/oauth/token`,
+        userinfo_endpoint: `${ISSUER}/oauth/userinfo`,
+        jwks_uri: `${ISSUER}/oauth/jwks`,
+      });
+    }
+    if (url === `${ISSUER}/oauth/token`) {
+      return Response.json({ access_token: TOKEN_TROCADO, expires_in: 600 });
+    }
+    if (url.startsWith(`${ISSUER}${EMBED_SESSIONS_PATH}`)) {
+      pedidos.push({
+        url,
+        method: init?.method ?? "GET",
+        headers: new Headers(init?.headers),
+        cache: init?.cache,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      if (resposta.status === 204) return new Response(null, { status: 204 });
+      return Response.json(resposta.body, { status: resposta.status });
+    }
+    throw new Error(`fetch inesperado: ${url}`);
+  }) as typeof fetch;
+});
+
+function pedido(i: number): Pedido {
+  const p = pedidos[i];
+  assert.ok(p, `esperava um pedido de sessão na posição ${i}`);
+  return p;
+}
+
+async function falha(p: Promise<unknown>): Promise<AgentChannelError> {
+  const erro = await p.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  assert.ok(erro instanceof AgentChannelError, "esperava AgentChannelError");
+  return erro;
+}
+
+test("o pedido de sessão bate com o contrato `embedSession`", async () => {
+  await createEmbedSession(
+    sessao("pessoa-1", "token-da-sessao"),
+    {
+      agent: "suporte",
+      threadId: THREAD,
+      colorMode: "light",
+      locale: "pt-BR",
+      ttlSeconds: 3600,
+    },
+    config,
+  );
+
+  const p = pedido(0);
+  assert.equal(p.url, `${ISSUER}${embed.path}`);
+  assert.equal(EMBED_SESSIONS_PATH, embed.path);
+  assert.equal(p.method, embed.method);
+  assert.equal(p.headers.get("content-type"), embed.contentType);
+  assert.equal(p.cache, embed.cache);
+
+  // Bearer com o token da TROCA — não o da sessão do App, que a plataforma
+  // recusaria (`not_an_app_token`) e que, se aceito, não diria "através deste App".
+  assert.match(
+    embed.authentication,
+    /^Authorization: Bearer <token de plataforma obtido em `exchange`>$/,
+  );
+  assert.equal(p.headers.get("authorization"), `Bearer ${TOKEN_TROCADO}`);
+  assert.notEqual(p.headers.get("authorization"), "Bearer token-da-sessao");
+
+  // Os nomes da plataforma, exatamente os do contrato.
+  assert.deepEqual(p.body, {
+    agent: "suporte",
+    thread_id: THREAD,
+    color_mode: "light",
+    locale: "pt-BR",
+    ttl_seconds: 3600,
+  });
+  assert.deepEqual(
+    Object.keys(p.body as object).sort(),
+    Object.keys(embed.body)
+      .filter((k) => !k.startsWith("$"))
+      .sort(),
+  );
+});
+
+test("o corpo leva só o que foi pedido", async () => {
+  await createEmbedSession(sessao("pessoa-1", "t"), {}, config);
+  // Sem agente o padrão do App vale do lado de lá; mandar `agent: null` seria
+  // pedir um agente chamado "null".
+  assert.deepEqual(pedido(0).body, {});
+
+  await createEmbedSession(sessao("pessoa-1", "t"), { agent: "cobranca" }, config);
+  assert.deepEqual(pedido(1).body, { agent: "cobranca" });
+});
+
+test("a resposta chega traduzida, e com o endereço do quadro intacto", async () => {
+  const s = await createEmbedSession(sessao("pessoa-1", "t"), {}, config);
+  assert.deepEqual(s, {
+    sessionId: "sessao-1",
+    embedUrl: `${ISSUER}/embed/c/sessao-1#code=abc`,
+    expiresAt: "2026-10-30T12:00:00.000Z",
+    threadId: THREAD,
+  });
+  // O código de entrada mora no fragmento: perdê-lo na tradução abriria um
+  // quadro que não entra.
+  assert.ok(new URL(s.embedUrl).hash.startsWith("#code="));
+  assert.deepEqual(Object.keys(respostaBoa().body), embed.response.fields);
+});
+
+test("os limites do que a tela pode pedir são os do contrato", () => {
+  assert.equal(EMBED_TTL_MIN_SECONDS, embed.body.ttl_seconds.min);
+  assert.equal(EMBED_TTL_MAX_SECONDS, embed.body.ttl_seconds.max);
+  const ok = (v: unknown) => embedSessionOptionsSchema.safeParse(v).success;
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.min }), true);
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.min - 1 }), false);
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.max + 1 }), false);
+  // Sem `ttlSeconds`, o App não manda o campo e vale o padrão da plataforma.
+  assert.equal(ok({ ttlSeconds: embed.body.ttl_seconds.default }), true);
+  for (const m of embed.body.color_mode) assert.equal(ok({ colorMode: m }), true);
+  assert.equal(ok({ colorMode: "sepia" }), false);
+  for (const l of embed.body.locale) assert.equal(ok({ locale: l }), true);
+  assert.equal(ok({ locale: "fr" }), false);
+  assert.equal(ok({ threadId: THREAD }), true);
+  assert.equal(ok({ threadId: "nao-e-uuid" }), false);
+});
+
+test("embed_url fora da origem do emissor é recusado", async (t) => {
+  t.mock.method(console, "error", () => {});
+  resposta = respostaBoa({
+    embed_url: "https://outro.exemplo.test/embed/c/sessao-1#code=abc",
+  });
+  const erro = await falha(createEmbedSession(sessao("pessoa-1", "t"), {}, config));
+  assert.equal(erro.code, "indisponivel");
+
+  // O caso está ARMADO: o mesmo endereço na origem certa passa (teste acima).
+  resposta = respostaBoa({ embed_url: "/embed/c/sessao-1#code=abc" });
+  assert.equal(
+    (await falha(createEmbedSession(sessao("pessoa-1", "t"), {}, config))).code,
+    "indisponivel",
+  );
+});
+
+test("as recusas nomeadas viram motivo próprio", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const casos: Array<[string, string]> = [
+    ["agent_not_found", "agente_desconhecido"],
+    ["thread_not_found", "conversa_desconhecida"],
+    ["not_an_app_token", "indisponivel"],
+    ["invalid_request", "indisponivel"],
+    ["internal_error", "indisponivel"],
+  ];
+  for (const [codigo, motivo] of casos) {
+    const def = embed.errors[codigo];
+    assert.ok(def, `o contrato não descreve ${codigo}`);
+    resposta = { status: def.status, body: { error: codigo, message: "x" } };
+    const erro = await falha(createEmbedSession(sessao("pessoa-1", "t"), {}, config));
+    assert.equal(erro.code, motivo, codigo);
+  }
+  // `session_not_found` é só do DELETE (caso próprio abaixo). Recusa nova no
+  // contrato sem caso aqui reprova: ela cairia calada no genérico.
+  assert.deepEqual(
+    Object.keys(embed.errors)
+      .filter((k) => !k.startsWith("$"))
+      .sort(),
+    [...casos.map(([c]) => c), "session_not_found"].sort(),
+  );
+  assert.deepEqual(embed.errorBody, ["error", "message"]);
+});
+
+test("resposta 201 em formato inesperado é indisponibilidade, não sessão sem endereço", async (t) => {
+  t.mock.method(console, "error", () => {});
+  resposta = { status: 201, body: { session_id: "s" } };
+  assert.equal(
+    (await falha(createEmbedSession(sessao("pessoa-1", "t"), {}, config))).code,
+    "indisponivel",
+  );
+});
+
+test("encerrar a sessão é DELETE no caminho do contrato, com o token trocado", async () => {
+  resposta = { status: embed.revoke.status, body: null };
+  assert.equal(
+    await revokeEmbedSession(sessao("pessoa-1", "t"), "sessao 1/x", config),
+    true,
+  );
+  const p = pedido(0);
+  assert.equal(p.method, embed.revoke.method);
+  assert.equal(
+    p.url,
+    `${ISSUER}${embed.revoke.path.replace("{sessionId}", encodeURIComponent("sessao 1/x"))}`,
+  );
+  assert.equal(p.headers.get("authorization"), `Bearer ${TOKEN_TROCADO}`);
+});
+
+test("encerrar sessão que não é mais desta pessoa conta como encerrada", async () => {
+  // O DELETE é idempotente (204 também já encerrada) e responde 404
+  // `session_not_found` à de outro App/pessoa ou inexistente: nos dois casos não
+  // há mais o que encerrar daqui, e insistir não muda nada.
+  const def = embed.errors.session_not_found;
+  assert.ok(def);
+  resposta = { status: def.status, body: { error: "session_not_found", message: "x" } };
+  assert.equal(await revokeEmbedSession(sessao("pessoa-1", "t"), "s", config), true);
+});
+
+test("encerrar nunca lança, e diz quando não conseguiu", async (t) => {
+  t.mock.method(console, "error", () => {});
+  resposta = { status: 500, body: {} };
+  assert.equal(await revokeEmbedSession(sessao("pessoa-1", "t"), "s", config), false);
+});
+
+test("os nomes das mensagens do quadro são os do contrato", () => {
+  assert.deepEqual([...EMBED_EVENTS], embed.frame.fromFrame);
+  assert.equal(embed.frame.toFrame.type, "volund:set-color-mode");
+  assert.deepEqual(embed.frame.toFrame.fields.mode, ["light", "dark", "system"]);
+  assert.deepEqual(Object.keys(embed.frame.otherToFrame), [
+    "volund:send",
+    "volund:new-thread",
+  ]);
+});
+
+test("mensagem do quadro só vale da origem do VolundOS e da janela do próprio quadro", () => {
+  const quadro = { nome: "o quadro" };
+  const outro = { nome: "outra janela" };
+  const ready = { type: "volund:ready", thread_id: THREAD };
+
+  const lido = readEmbedEvent(
+    { origin: ISSUER, source: quadro, data: ready },
+    ISSUER,
+    quadro,
+  );
+  assert.ok(lido);
+  assert.equal(lido.type, "volund:ready");
+  assert.equal(threadIdOf(lido), THREAD);
+
+  assert.equal(
+    readEmbedEvent(
+      { origin: "https://intruso.test", source: quadro, data: ready },
+      ISSUER,
+      quadro,
+    ),
+    null,
+  );
+  assert.equal(
+    readEmbedEvent({ origin: ISSUER, source: outro, data: ready }, ISSUER, quadro),
+    null,
+  );
+  // Quadro ainda sem janela (desmontado): nada é aceito, nem de `source` nulo.
+  assert.equal(
+    readEmbedEvent({ origin: ISSUER, source: null, data: ready }, ISSUER, null),
+    null,
+  );
+  assert.equal(
+    readEmbedEvent(
+      { origin: ISSUER, source: quadro, data: { type: "volund:inventado" } },
+      ISSUER,
+      quadro,
+    ),
+    null,
+  );
+});
+
+test("o componente posta para a origem exata e troca o tema no `ready`", () => {
+  const fonte = readFileSync(
+    new URL("../components/volund/agent-embed.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(fonte, /postMessage\(command, platformOrigin\)/);
+  assert.doesNotMatch(fonte, /postMessage\([^)]*["']\*["']\)/);
+  assert.match(fonte, /case "volund:ready":[\s\S]*?type: "volund:set-color-mode"/);
+  assert.match(fonte, /case "volund:session-expiring":[\s\S]*?renovar\(\)/);
+  assert.match(
+    fonte,
+    /readEmbedEvent\(\s*event,\s*platformOrigin,\s*frameRef\.current\?\.contentWindow,?\s*\)/,
+  );
+});
+
+test("renovar leva o agente, a conversa em curso e a sessão substituída", () => {
+  const corpo = renewRequestBody({
+    agent: "suporte",
+    threadId: THREAD,
+    colorMode: "light",
+    replaces: "sessao-0",
+  });
+  assert.equal(corpo.agent, "suporte");
+  assert.equal(corpo.threadId, THREAD);
+  assert.equal(corpo.replaces, "sessao-0");
+  assert.equal(corpo.colorMode, "light");
+  // `null` vira ausência: a rota recusaria `threadId: null` (não é uuid).
+  assert.equal(
+    "threadId" in
+      JSON.parse(
+        JSON.stringify(
+          renewRequestBody({ threadId: null, colorMode: "dark", replaces: "s" }),
+        ),
+      ),
+    false,
+  );
+
+  const fonte = readFileSync(
+    new URL("../components/volund/agent-embed.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(fonte, /JSON\.stringify\(\s*renewRequestBody\(/);
+});
+
+test("renovação recusada por conversa desconhecida esquece a conversa", () => {
+  const conversa = renewFailure({
+    error: "conversa_desconhecida",
+    message: "Não encontrei essa conversa. Comece uma nova.",
+  });
+  assert.equal(conversa.forgetThread, true);
+  assert.equal(conversa.message, "Não encontrei essa conversa. Comece uma nova.");
+
+  // Armado: as outras recusas mantêm a conversa (renovar de novo continua nela).
+  assert.equal(
+    renewFailure({ error: "indisponivel", message: "x" }).forgetThread,
+    false,
+  );
+  assert.equal(renewFailure(null).forgetThread, false);
+  assert.match(renewFailure(null).message, /Não consegui renovar/);
+
+  const fonte = readFileSync(
+    new URL("../components/volund/agent-embed.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    fonte,
+    /if \(falha\.forgetThread\) threadRef\.current = null;\s*setAviso\(falha\.message\)/,
+  );
+});
+
+function pedidoDaTela(body: unknown, contentType = "application/json"): Request {
+  return new Request("https://app.exemplo.test/api/volund/embed-session", {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+test("a rota recusa corpo que não é JSON com 415, sem falar com a plataforma", async () => {
+  const r = await embedSessionPost(
+    pedidoDaTela('{"agent":"suporte"}', "text/plain"),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(r.status, 415);
+  assert.equal(chamadas, 0);
+
+  // Armado: o mesmo corpo como JSON chega à plataforma.
+  const ok = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(ok.status, 201);
+  assert.ok(chamadas > 0);
+});
+
+test("`replaces` encerra a sessão anterior, e só quando é outra", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const deletes = () => pedidos.filter((p) => p.method === "DELETE");
+
+  // A resposta boa cria `sessao-1`; a tela pede para substituir `sessao-0`.
+  const r = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte", replaces: "sessao-0" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(r.status, 201);
+  assert.equal(deletes().length, 1);
+  assert.equal(deletes()[0]?.url, `${ISSUER}${EMBED_SESSIONS_PATH}/sessao-0`);
+
+  // A mesma sessão que acabou de nascer não é encerrada.
+  pedidos = [];
+  const igual = await embedSessionPost(
+    pedidoDaTela({ agent: "suporte", replaces: "sessao-1" }),
+    sessao("pessoa-1", "t"),
+    config,
+  );
+  assert.equal(igual.status, 201);
+  assert.equal(deletes().length, 0);
+});

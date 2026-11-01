@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
 import { MonoLabel } from "@/components/ui/mono-label";
+import { OrgBrand } from "@/components/volund/org-brand";
 import {
   Card,
   CardContent,
@@ -17,6 +18,7 @@ import {
   readAuthConfig,
 } from "@/lib/auth/config";
 import { readSealedPayload } from "@/lib/auth/session";
+import { orgAppearance } from "@/lib/volund/appearance";
 
 /**
  * Vitrine — a **única** página pública deste App, e só para quem ainda não entrou.
@@ -83,10 +85,15 @@ export default async function Home() {
 
   if (temSessao) redirect(APP_HOME_PATH);
 
+  // A marca da organização dona do App (contrato 9). Sem ela, a vitrine abre
+  // igual — `OrgBrand` não desenha nada.
+  const appearance = await orgAppearance();
+
   return (
     <main className="flex flex-1 items-center justify-center p-8">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <OrgBrand appearance={appearance} className="mb-2" />
           <MonoLabel>Aplicação</MonoLabel>
           <CardTitle>Aplicação no ar</CardTitle>
           <CardDescription>

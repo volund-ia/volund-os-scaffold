@@ -41,6 +41,8 @@ function sessao(permissoes: string[] = []): Session {
     name: "Pessoa de Teste",
     roles: [],
     permissions: permissoes,
+    subjectType: "user",
+    actor: null,
     accessToken: "token-de-teste",
   };
 }

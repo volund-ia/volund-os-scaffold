@@ -31,6 +31,12 @@ import { useEffect } from "react";
  * o App já conhece por `VOLUND_OIDC_ISSUER` — e a mensagem que chega só é aceita
  * se vier de lá.
  *
+ * ## O primeiro aviso também diz "estou pronto" (contrato 9)
+ *
+ * O painel responde ao primeiro `route` com o tema da pessoa
+ * (`panelToAppTheme`). Quem escuta essa resposta é o `ThemeBinding`
+ * (`./theme-binding.tsx`), montado antes deste componente no layout.
+ *
  * ## Não fazer nada é o caminho normal
  *
  * Fora do painel — a aplicação aberta numa aba, que é como ela roda na maior

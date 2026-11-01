@@ -53,8 +53,29 @@ export interface Session {
   name: string | null;
   roles: string[];
   permissions: string[];
+  /**
+   * `"user"` quando o sujeito é uma pessoa (inclusive quando um agente age por
+   * ela); `"agent"` quando é um agente agindo como ele mesmo — aí `userId` é o
+   * id do AGENTE, e as permissões são as dele.
+   */
+  subjectType: "user" | "agent";
+  /**
+   * Quem agiu pela pessoa (`act` do token): um agente ou um App. `null` quando
+   * foi a própria pessoa. Serve para a trilha ("feito pelo agente X em nome de
+   * Y"), nunca para decidir acesso — quem decide é `can()`, com as permissões da
+   * pessoa.
+   */
+  actor: { sub: string; type: string } | null;
   /** Para chamar serviços em nome do usuário. Não coloque isto em HTML. */
   accessToken: string;
+}
+
+/** O `act` do token, conferido; `null` quando ausente ou malformado. */
+function actorFromClaim(act: TokenClaims["act"]): Session["actor"] {
+  if (!act || typeof act !== "object") return null;
+  return typeof act.sub === "string" && act.sub && typeof act.type === "string"
+    ? { sub: act.sub, type: act.type }
+    : null;
 }
 
 export interface Handshake {
@@ -146,6 +167,10 @@ function sessionFromClaims(claims: TokenClaims, accessToken: string): Session {
     name: claims.name ?? null,
     roles: Array.isArray(claims.roles) ? claims.roles : [],
     permissions: Array.isArray(claims.permissions) ? claims.permissions : [],
+    // Só `"agent"` muda o sentido de `userId`; qualquer outro valor (ou a
+    // ausência, num provedor anterior) é a leitura segura: uma pessoa.
+    subjectType: claims.subject_type === "agent" ? "agent" : "user",
+    actor: actorFromClaim(claims.act),
     accessToken,
   };
 }

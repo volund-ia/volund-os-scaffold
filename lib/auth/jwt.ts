@@ -37,6 +37,16 @@ export interface TokenClaims {
   scope?: string;
   roles?: string[];
   permissions?: string[];
+  /**
+   * Quem é o sujeito: `"user"` (uma pessoa) ou `"agent"` (um agente agindo como
+   * ele mesmo). Sempre emitido — ver `contracts/auth-claims.json`, `modes`.
+   */
+  subject_type?: string;
+  /**
+   * Quem agiu PELA pessoa, quando foi um agente ou um App (modo `delegated`).
+   * Registra quem agiu; não acrescenta permissão — valem as da pessoa.
+   */
+  act?: { sub?: unknown; type?: unknown };
 }
 
 export type VerifyResult =

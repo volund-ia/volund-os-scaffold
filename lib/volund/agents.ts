@@ -1,6 +1,15 @@
 /**
  * O canal com os agentes que ESTE App oferece a quem usa a aplicação
- * (contrato 8).
+ * (contrato 8; no 9, o caminho HEADLESS de servidor).
+ *
+ * ## Dois usos, um canal
+ *
+ * - **A tela de conversa** é o chat embutido do VolundOS (`lib/volund/embed.ts`,
+ *   contrato 9). Este arquivo entrega a ele a troca de token e o roteiro.
+ * - **Chamar um agente por código, no servidor** (um resumo gerado ao salvar um
+ *   pedido, uma classificação num job): `volundFor(session)` devolve o cliente
+ *   do `@volund-ia/sdk` autenticado como a pessoa, e `resolveAgentId` traduz o
+ *   apelido. Nada disso passa pelo navegador.
  *
  * ## O que muda em relação a guardar uma chave de API
  *
@@ -23,8 +32,9 @@
  *
  * 1. **O token trocado nunca chega ao navegador.** Ele autoriza disparar
  *    agentes na plataforma; entregá-lo ao cliente seria entregar essa
- *    autorização a quem abrir o inspetor. Por isso as telas falam com as rotas
- *    de `app/api/volund/`, e são elas que falam com a plataforma.
+ *    autorização a quem abrir o inspetor. A conversa na tela é o chat embutido
+ *    do VolundOS (`lib/volund/embed.ts`): o servidor troca o token e cria a
+ *    sessão do chat, e ao navegador chega só o endereço do quadro.
  * 2. **O roteiro vem em tempo de execução, não de variável de ambiente.**
  *    Variável só muda no próximo deploy; vincular um agente no painel precisa
  *    aparecer aqui sem republicar nada. É por isso que o contrato 8 não
@@ -87,7 +97,13 @@ export interface AppAgent {
  * "algo deu errado". Confundir os dois faz quem configurou procurar erro onde
  * não há.
  */
-export type AgentChannelErrorCode = "sem_agente" | "indisponivel";
+export type AgentChannelErrorCode =
+  | "sem_agente"
+  | "indisponivel"
+  /** O apelido pedido não é oferecido por este App (chat embutido: `agent_not_found`). */
+  | "agente_desconhecido"
+  /** A conversa pedida não existe, ou não é desta pessoa (`thread_not_found`). */
+  | "conversa_desconhecida";
 
 export class AgentChannelError extends Error {
   readonly code: AgentChannelErrorCode;
@@ -380,6 +396,17 @@ export function selectAgent(agents: AppAgent[], key?: string | null): AppAgent |
 }
 
 /**
+ * Se a página de conversa mostra a lista de agentes.
+ *
+ * Com mais de um, sempre: é como se troca de agente. Com um só, só quando a
+ * página não abriu a conversa (`indisponivel`) — o apelido pedido não existe e
+ * a frase manda escolher "um da lista", que precisa estar lá.
+ */
+export function showAgentNav(agents: AppAgent[], unavailable: boolean): boolean {
+  return agents.length > 1 || (unavailable && agents.length > 0);
+}
+
+/**
  * Do apelido para o identificador que a plataforma usa, com o roteiro no meio.
  *
  * É esta função que mantém a promessa do apelido: o identificador do agente é
@@ -395,9 +422,12 @@ export async function resolveAgentId(
 ): Promise<{ agent: AppAgent; agentId: string }> {
   const { agents, ids } = await loadRoster(session, config);
   const agent = selectAgent(agents, key);
+  // Roteiro vazio já saiu como `sem_agente` em `loadRoster`; aqui o que falta é
+  // o APELIDO — um link errado, e não um App sem agente. Mesmo motivo (e mesmo
+  // 404) da recusa `agent_not_found` do chat embutido.
   if (!agent) {
     throw new AgentChannelError(
-      "sem_agente",
+      "agente_desconhecido",
       `Este app não oferece nenhum agente chamado "${key}".`,
     );
   }

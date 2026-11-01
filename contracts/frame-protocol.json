@@ -3,7 +3,8 @@
   "$comment_porque": "O quadro é de outra origem: o painel não consegue LER a URL de dentro dele (`contentDocument` é null, `location` lança SecurityError) — e é essa mesma barreira que torna o `sandbox` seguro. Sem um aviso explícito, a barra de rota do painel só sabia o caminho que ela mesma tinha comandado, e ficava desatualizada assim que a pessoa clicava num link DENTRO da aplicação. Este é o canal que faltava, e ele é de aviso: quem navega continua sendo a aplicação.",
   "$comment_origem": "As duas pontas endereçam a origem exata da outra e recusam qualquer outra. O App conhece a do painel por `VOLUND_OIDC_ISSUER`; o painel conhece a do App pelo endereço que ele mesmo emoldurou. Postar para `*` publicaria a navegação da pessoa para qualquer página que resolvesse emoldurar o App.",
   "$comment_v8": "O contrato 8 não mexe neste protocolo. O número acompanha o do scaffold porque é o mesmo número — ver contracts/README.md e a trava em tests/unit/apps-frame-protocol.test.ts.",
-  "contract": 8,
+  "$comment_v9": "O contrato 9 acrescenta UMA mensagem, na direção painel → App: `panelToAppTheme`, o modo de cor EFETIVO do painel, para o App emoldurado acompanhar o claro/escuro de quem está nele. As duas mensagens anteriores não mudam. A preferência não vai ao banco (fica no localStorage `volund:tema` do painel); por isso ela chega por aqui, e não por claim nem por endpoint.",
+  "contract": 9,
   "appToPanel": {
     "$comment": "Enviada pelo App a cada mudança de rota, e uma vez ao montar. O painel usa para refletir o caminho no endereço dele — nunca para recompor o `src` do quadro, o que criaria laço de recarga.",
     "source": "volund-app",
@@ -20,5 +21,14 @@
       "path": "Caminho + query de destino, sempre começando por `/`."
     }
   },
-  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das duas mensagens é obrigatória para o App funcionar."
+  "panelToAppTheme": {
+    "$comment": "Enviada pelo painel à origem EXATA do App em três momentos: ao receber a PRIMEIRA mensagem `route` válida de um quadro (o App manda `route` ao montar, e isso é o handshake: antes dela o App pode não estar escutando), no `load` do iframe, e a cada troca de tema do painel. Repetir é inofensivo: o App só aplica o modo. App em contrato anterior ignora a mensagem.",
+    "$comment_app": "O lado do App (scaffold, components/volund/theme-binding.tsx): aceita só de `event.origin` igual à origem de VOLUND_OIDC_ISSUER e de `event.source === window.parent`, e só `light`/`dark`. `light` põe `data-tema=\"claro\"` no <html>; `dark` tira o atributo. Recebida a primeira, o App deixa de seguir `prefers-color-scheme` (que é o que vale fora do painel) e guarda o modo na aba, para o script de antes da pintura nascer no tema certo ao recarregar dentro do painel.",
+    "source": "volund-panel",
+    "type": "theme",
+    "fields": {
+      "mode": "\"light\" ou \"dark\": o modo EFETIVO (o painel resolve Sistema)"
+    }
+  },
+  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das mensagens é obrigatória para o App funcionar; a de tema é postada mesmo a quem não escuta, e cai no vazio."
 }
