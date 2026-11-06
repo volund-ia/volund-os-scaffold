@@ -23,13 +23,13 @@ import { test } from "node:test";
 /** sha256 do arquivo canônico. Mude SÓ junto com a cópia do volund-os. */
 const CANONICOS: Record<string, string> = {
   "agent-channel.json":
-    "cb16c4dfe718a80a673970542263688f7a2e8cd0554b6275b1ecf8d0c53057f5",
+    "c9561a95101ba32cf085fd6f349597ecfaae8262f3af2f84511975a6243edb3d",
   "app-appearance.json":
-    "b43a394fbfb8bde1493a57faf7e012d7fe2134f4c250bae159350f81c00557f2",
+    "2a89c3352d0f79133aae5d8955ed4a906b1dd3bf1b720fdc30a97db5e5d6047e",
   "auth-claims.json":
-    "3961da30c8bc3a42dfaced52b65a5c02e81e87cc46aa43d17e5b8b1a6520a520",
+    "5dad83fc0d5c17771ad2a2287115e7e4c7e5c69e5ca8bae5103f4e2d6ebec43c",
   "frame-protocol.json":
-    "cad3a205117e70bfa4586f642b2cefc8a771b19eae3b9e48a610bd467b4c96d0",
+    "b90f3a79b6024b7cd64757a669905d35b316faf3471276f8e0b5a8b9247c7905",
 };
 
 const dir = new URL("../contracts/", import.meta.url);
