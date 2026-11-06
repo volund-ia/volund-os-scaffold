@@ -221,10 +221,16 @@ test("o seletor e o componente executam as decisões do gate, e só falam com o 
   }
   assert.match(seletor, /decidirClique\(/);
   assert.match(seletor, /mensagemDaTecla\(event\.key\)/);
-  assert.match(seletor, /\}, FIM_DO_GESTO_MS\);/);
+  // O fim do gesto DESLIGA o modo quando acaba (sem isto, a camada prenderia a
+  // página para sempre).
+  assert.match(seletor, /setActive\(false\);\s*\},\s*FIM_DO_GESTO_MS\);/);
   assert.match(seletor, /window\.parent\.postMessage\(aviso, panelOrigin\)/);
   assert.match(componente, /initialActive: aoCarregar\(carga\)\.initialActive/);
-  assert.match(componente, /aoFalhar\(carga\)/);
+  // A falha do import AVISA o painel com o que `aoFalhar` decidiu.
+  assert.match(
+    componente,
+    /const falha = aoFalhar\(carga\);[\s\S]*?window\.parent\.postMessage\(falha\.avisar, parentOrigin!?\)/,
+  );
   // O clique é capturado antes da aplicação, e não há início automático.
   assert.match(seletor, /addEventListener\("click", onClick, true\)/);
   assert.match(seletor, /stopImmediatePropagation/);
