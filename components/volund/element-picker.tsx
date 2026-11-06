@@ -3,7 +3,11 @@
 import { useEffect } from "react";
 
 import {
+  CARGA_INICIAL,
   PICK_READY_MESSAGE,
+  aoCarregar,
+  aoFalhar,
+  aoPedido,
   readPanelPickMessage,
 } from "@/lib/volund/element-picker-gate";
 
@@ -46,16 +50,15 @@ export function ElementPicker({ parentOrigin }: { parentOrigin: string | null })
     )
       return;
 
-    let carregando = false;
-    let ultimoPedido = false;
+    let carga = CARGA_INICIAL;
     let vivo = true;
 
     function onMessage(event: MessageEvent) {
       const active = readPanelPickMessage(event, parentOrigin, window.parent);
       if (active === null) return;
-      ultimoPedido = active;
-      if (!active || carregando) return;
-      carregando = true;
+      const pedido = aoPedido(carga, active);
+      carga = pedido.carga;
+      if (!pedido.carregar) return;
       void import("@/lib/volund/element-picker")
         .then(({ startElementPicker }) => {
           if (!vivo) return;
@@ -65,12 +68,14 @@ export function ElementPicker({ parentOrigin }: { parentOrigin: string | null })
             panelOrigin: parentOrigin!,
             announceReady: false,
             // O pedido que chegou enquanto o código baixava é o que vale.
-            initialActive: ultimoPedido,
+            initialActive: aoCarregar(carga).initialActive,
           });
         })
         .catch(() => {
-          // Sem o código, o próximo pedido tenta de novo.
-          carregando = false;
+          const falha = aoFalhar(carga);
+          carga = falha.carga;
+          if (falha.avisar && vivo)
+            window.parent.postMessage(falha.avisar, parentOrigin!);
         });
     }
 

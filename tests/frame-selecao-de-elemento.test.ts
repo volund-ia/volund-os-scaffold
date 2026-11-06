@@ -11,9 +11,17 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  CARGA_INICIAL,
+  FIM_DO_GESTO_MS,
   FRAME_SOURCE_APP,
   FRAME_SOURCE_PANEL,
+  PICK_CANCEL_MESSAGE,
   PICK_READY_MESSAGE,
+  aoCarregar,
+  aoFalhar,
+  aoPedido,
+  decidirClique,
+  mensagemDaTecla,
   readPanelPickMessage,
 } from "../lib/volund/element-picker-gate";
 
@@ -35,6 +43,8 @@ test("o contrato descreve as mensagens que o componente e o seletor falam", () =
   assert.deepEqual(Object.keys(c.panelToAppPick.fields), ["active"]);
   assert.equal(c.appToPanelPickReady.source, PICK_READY_MESSAGE.source);
   assert.equal(c.appToPanelPickReady.type, PICK_READY_MESSAGE.type);
+  assert.equal(c.appToPanelPickCancel.source, PICK_CANCEL_MESSAGE.source);
+  assert.equal(c.appToPanelPickCancel.type, PICK_CANCEL_MESSAGE.type);
   for (const [chave, tipo] of [
     ["appToPanelPicked", "picked"],
     ["appToPanelPickCancel", "pick-cancel"],
@@ -45,7 +55,6 @@ test("o contrato descreve as mensagens que o componente e o seletor falam", () =
 
   const seletor = ler("lib/volund/element-picker.ts");
   assert.match(seletor, /type: "picked"/);
-  assert.match(seletor, /type: "pick-cancel"/);
 });
 
 // ---------------------------------------------------------------------------
@@ -137,21 +146,89 @@ test("o seletor pesado só é baixado quando pedem, e o layout monta o component
 });
 
 // ---------------------------------------------------------------------------
-// 4. O seletor
+// 4. O clique, o Esc e o fim do gesto
 // ---------------------------------------------------------------------------
 
-test("o seletor endereça a origem do painel e confere origem e janela do pedido", () => {
-  const fonte = ler("lib/volund/element-picker.ts");
-  assert.doesNotMatch(fonte, /postMessage\([^)]*,\s*["']\*["']\s*\)/);
-  assert.match(
-    fonte,
-    /window\.parent\.postMessage\(\{ source: SOURCE_APP, \.\.\.message \}, panelOrigin\)/,
+test("clique sem nada escolhível sob o cursor segue no modo, sem desligar calado", () => {
+  assert.equal(
+    decidirClique({ escolhendo: false, temElemento: false }),
+    "seguir-no-modo",
   );
-  assert.match(fonte, /event\.origin !== panelOrigin/);
-  assert.match(fonte, /event\.source !== window\.parent/);
-  // O clique é capturado antes da aplicação.
-  assert.match(fonte, /addEventListener\("click", onClick, true\)/);
-  assert.match(fonte, /stopImmediatePropagation/);
-  // Sem início automático: quem decide é o componente.
-  assert.doesNotMatch(fonte, /document\.currentScript/);
+});
+
+test("clique num elemento escolhe; o segundo clique do gesto é engolido", () => {
+  assert.equal(decidirClique({ escolhendo: false, temElemento: true }), "escolher");
+  assert.equal(decidirClique({ escolhendo: true, temElemento: true }), "engolir");
+  assert.equal(decidirClique({ escolhendo: true, temElemento: false }), "engolir");
+});
+
+test("o fim do gesto cobre o intervalo de um duplo clique", () => {
+  // O segundo clique de um duplo clique chega uns 300 ms depois do primeiro.
+  assert.ok(FIM_DO_GESTO_MS >= 350, `fim do gesto curto demais: ${FIM_DO_GESTO_MS} ms`);
+  assert.ok(
+    FIM_DO_GESTO_MS <= 1000,
+    "a camada não pode prender a página por muito tempo",
+  );
+});
+
+test("o Esc avisa o painel; outra tecla não", () => {
+  assert.deepEqual(mensagemDaTecla("Escape"), {
+    source: "volund-app",
+    type: "pick-cancel",
+  });
+  assert.equal(mensagemDaTecla("Enter"), null);
+  assert.equal(mensagemDaTecla("Esc"), null);
+});
+
+// ---------------------------------------------------------------------------
+// 5. A carga sob demanda do componente
+// ---------------------------------------------------------------------------
+
+test("o primeiro pedido de ligar baixa o seletor; desligar não baixa nada", () => {
+  assert.equal(aoPedido(CARGA_INICIAL, false).carregar, false);
+  const ligar = aoPedido(CARGA_INICIAL, true);
+  assert.equal(ligar.carregar, true);
+  // Um segundo pedido enquanto baixa não baixa de novo.
+  assert.equal(aoPedido(ligar.carga, true).carregar, false);
+});
+
+test("o seletor nasce no estado do ÚLTIMO pedido, inclusive o que chegou enquanto baixava", () => {
+  const ligou = aoPedido(CARGA_INICIAL, true).carga;
+  assert.equal(aoCarregar(ligou).initialActive, true);
+  const desligouNoMeio = aoPedido(ligou, false).carga;
+  assert.equal(aoCarregar(desligouNoMeio).initialActive, false);
+});
+
+test("se o seletor não baixa com o modo pedido, o painel sai do modo; o próximo pedido tenta de novo", () => {
+  const ligou = aoPedido(CARGA_INICIAL, true).carga;
+  const falha = aoFalhar(ligou);
+  assert.deepEqual(falha.avisar, PICK_CANCEL_MESSAGE);
+  assert.equal(aoPedido(falha.carga, true).carregar, true);
+  // Falhou depois de a pessoa já ter desligado: nada a avisar.
+  assert.equal(aoFalhar(aoPedido(ligou, false).carga).avisar, null);
+});
+
+// ---------------------------------------------------------------------------
+// 6. Quem executa as decisões
+// ---------------------------------------------------------------------------
+
+test("o seletor e o componente executam as decisões do gate, e só falam com o painel", () => {
+  const seletor = ler("lib/volund/element-picker.ts");
+  const componente = ler("components/volund/element-picker.tsx");
+  for (const fonte of [seletor, componente]) {
+    assert.doesNotMatch(fonte, /postMessage\([^)]*,\s*["']\*["']\s*\)/);
+    assert.match(fonte, /readPanelPickMessage\(event, \w+, window\.parent\)/);
+  }
+  assert.match(seletor, /decidirClique\(/);
+  assert.match(seletor, /mensagemDaTecla\(event\.key\)/);
+  assert.match(seletor, /\}, FIM_DO_GESTO_MS\);/);
+  assert.match(seletor, /window\.parent\.postMessage\(aviso, panelOrigin\)/);
+  assert.match(componente, /initialActive: aoCarregar\(carga\)\.initialActive/);
+  assert.match(componente, /aoFalhar\(carga\)/);
+  // O clique é capturado antes da aplicação, e não há início automático.
+  assert.match(seletor, /addEventListener\("click", onClick, true\)/);
+  assert.match(seletor, /stopImmediatePropagation/);
+  assert.doesNotMatch(seletor, /document\.currentScript/);
+  // Cor do tema, não literal.
+  assert.match(seletor, /var\(--primary/);
 });

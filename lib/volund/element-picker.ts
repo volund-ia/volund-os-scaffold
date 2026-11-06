@@ -27,16 +27,18 @@
  */
 
 import {
+  FIM_DO_GESTO_MS,
+  FRAME_SOURCE_APP,
+  decidirClique,
+  mensagemDaTecla,
+  readPanelPickMessage,
+} from "./element-picker-gate";
+import {
   getElementAtPoint,
   getElementContext,
   getElementSelector,
   isElementGrabbable,
 } from "react-grab/primitives";
-
-const SOURCE_APP = "volund-app";
-const SOURCE_PANEL = "volund-panel";
-/** Quanto a camada segura o ponteiro depois da escolha: cobre o duplo clique. */
-const FIM_DO_GESTO_MS = 450;
 
 interface StartOptions {
   panelOrigin: string;
@@ -119,7 +121,7 @@ export function startElementPicker({
     true;
 
   const post = (message: Record<string, unknown>) =>
-    window.parent.postMessage({ source: SOURCE_APP, ...message }, panelOrigin);
+    window.parent.postMessage({ source: FRAME_SOURCE_APP, ...message }, panelOrigin);
 
   // Uma camada por cima da página, num shadow root: o CSS da aplicação não
   // alcança, e ela não alcança o da aplicação. Com o modo ligado ela RECEBE o
@@ -135,11 +137,13 @@ export function startElementPicker({
   host.style.cssText =
     "position:fixed;inset:0;pointer-events:auto;cursor:crosshair;z-index:2147483647;display:none;background:transparent";
   const shadow = host.attachShadow({ mode: "open" });
-  // O contorno é o do modo comentário dos artefatos
-  // (`components/artifacts/design-comments.tsx`): só a linha, 2 px na cor da
+  // O contorno é o do modo comentário do painel: só a linha, 2 px na cor da
   // marca a 80%, raio 3, afastada 1 px do elemento. Sem etiqueta e sem fundo.
+  // A cor é o `--primary` do tema, que já traz a marca da organização (a
+  // variável atravessa o shadow root); o valor depois da vírgula só vale se o
+  // tema não definir a variável.
   shadow.innerHTML = `<style>
-    .box{position:fixed;pointer-events:none;box-sizing:border-box;border:2px solid rgba(237,59,98,.8);border-radius:3px;transition:all 60ms linear}
+    .box{position:fixed;pointer-events:none;box-sizing:border-box;border:2px solid color-mix(in oklch, var(--primary, #ed3b62) 80%, transparent);border-radius:3px;transition:all 60ms linear}
   </style><div class="box"></div>`;
   const box = shadow.querySelector(".box") as HTMLDivElement;
   const mount = () => {
@@ -260,8 +264,9 @@ export function startElementPicker({
 
   async function onClick(event: MouseEvent) {
     block(event);
-    if (escolhendo) return;
-    const el = current ?? elementAt(event.clientX, event.clientY);
+    const el = escolhendo ? null : (current ?? elementAt(event.clientX, event.clientY));
+    if (decidirClique({ escolhendo, temElemento: el !== null }) !== "escolher" || !el)
+      return;
     escolhendo = true;
     box.style.display = "none";
     fimDoGesto = window.setTimeout(() => {
@@ -269,28 +274,20 @@ export function startElementPicker({
       escolhendo = false;
       setActive(false);
     }, FIM_DO_GESTO_MS);
-    if (!el) return;
     post({ type: "picked", element: await describe(el) });
   }
 
   function onKey(event: KeyboardEvent) {
-    if (event.key !== "Escape") return;
+    const aviso = mensagemDaTecla(event.key);
+    if (!aviso) return;
     block(event);
     setActive(false);
-    post({ type: "pick-cancel" });
+    window.parent.postMessage(aviso, panelOrigin);
   }
 
   window.addEventListener("message", (event: MessageEvent) => {
-    if (event.origin !== panelOrigin) return;
-    if (event.source !== window.parent) return;
-    const data = event.data as {
-      source?: unknown;
-      type?: unknown;
-      active?: unknown;
-    } | null;
-    if (!data || typeof data !== "object") return;
-    if (data.source !== SOURCE_PANEL || data.type !== "pick") return;
-    if (typeof data.active !== "boolean") return;
+    const active = readPanelPickMessage(event, panelOrigin, window.parent);
+    if (active === null) return;
     // Pedido do painel no meio do fim do gesto (a pessoa religou o modo logo
     // depois de escolher): o pedido novo prevalece. Sem isto, o temporizador
     // desligaria o seletor com o painel dizendo "modo comentário".
@@ -300,7 +297,7 @@ export function startElementPicker({
       escolhendo = false;
       setActive(false);
     }
-    setActive(data.active);
+    setActive(active);
   });
 
   if (initialActive) setActive(true);

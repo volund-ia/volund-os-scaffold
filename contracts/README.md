@@ -59,7 +59,10 @@ Duas coisas que ele fixa e que vale ler antes de mexer:
 
 As mensagens entre o painel do VolundOS e um App emoldurado nele: o aviso de
 rota (`appToPanel`), a navegação pedida pelo painel (`panelToApp`) e, no contrato
-9, o tema da pessoa (`panelToAppTheme`). As duas pontas conferem origem exata e
+9, o tema da pessoa (`panelToAppTheme`). No contrato 10 entra a seleção de
+elemento para comentar com o agente: o painel liga e desliga o modo (`pick`), e
+a aplicação avisa que sabe selecionar (`pick-ready`), manda o elemento escolhido
+(`picked`) e o Esc (`pick-cancel`). As duas pontas conferem origem exata e
 janela, e nenhuma posta para `*`.
 
 ## `app-appearance.json`
@@ -100,8 +103,9 @@ ela é conferida.
   mensagens): o pedido montado em `lib/volund/` leva exatamente o que o arquivo
   descreve, então mudar o código sem mudar o contrato falha. Ele confere
   **este** lado — a outra ponta cai na ressalva do fim desta página.
-- **`frame-protocol.json`** é conferido por `tests/frame-vinculo-de-rota.test.ts`,
-  e **`app-appearance.json`** por `tests/volund-aparencia.test.ts`.
+- **`frame-protocol.json`** é conferido por `tests/frame-vinculo-de-rota.test.ts`
+  (rota, navegação e tema) e `tests/frame-selecao-de-elemento.test.ts` (seleção
+  de elemento), e **`app-appearance.json`** por `tests/volund-aparencia.test.ts`.
 
 ## Como mudar o contrato
 
