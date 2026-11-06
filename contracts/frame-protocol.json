@@ -4,7 +4,8 @@
   "$comment_origem": "As duas pontas endereçam a origem exata da outra e recusam qualquer outra. O App conhece a do painel por `VOLUND_OIDC_ISSUER`; o painel conhece a do App pelo endereço que ele mesmo emoldurou. Postar para `*` publicaria a navegação da pessoa para qualquer página que resolvesse emoldurar o App.",
   "$comment_v8": "O contrato 8 não mexe neste protocolo. O número acompanha o do scaffold porque é o mesmo número — ver contracts/README.md e a trava em tests/unit/apps-frame-protocol.test.ts.",
   "$comment_v9": "O contrato 9 acrescenta UMA mensagem, na direção painel → App: `panelToAppTheme`, o modo de cor EFETIVO do painel, para o App emoldurado acompanhar o claro/escuro de quem está nele. As duas mensagens anteriores não mudam. A preferência não vai ao banco (fica no localStorage `volund:tema` do painel); por isso ela chega por aqui, e não por claim nem por endpoint.",
-  "contract": 9,
+  "$comment_v10": "O contrato 10 acrescenta a SELEÇÃO DE ELEMENTO: a pessoa liga o modo no painel, escolhe um elemento da página do App e o painel abre a caixa de comentário e manda a descrição dele (seletor, rótulo, componente e arquivo:linha quando a página tem essa informação) ao agente como comentário na tela (evento app_comment, POST /api/agents/<id>/app/comments). Quem acha o elemento é um script DENTRO da página (o painel não lê o DOM de outra origem): no ambiente de Desenvolvimento, o proxy do sandbox o injeta em qualquer App, de qualquer contrato; no Publicado, só o componente do scaffold 10 o carrega. As mensagens anteriores não mudam.",
+  "contract": 10,
   "appToPanel": {
     "$comment": "Enviada pelo App a cada mudança de rota, e uma vez ao montar. O painel usa para refletir o caminho no endereço dele — nunca para recompor o `src` do quadro, o que criaria laço de recarga.",
     "source": "volund-app",
@@ -30,5 +31,45 @@
       "mode": "\"light\" ou \"dark\": o modo EFETIVO (o painel resolve Sistema)"
     }
   },
-  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das mensagens é obrigatória para o App funcionar; a de tema é postada mesmo a quem não escuta, e cai no vazio."
+  "compatibilidade": "App em contrato anterior nunca envia nem escuta nada, e as duas pontas continuam funcionando como antes: o painel comanda pelo `src` e não observa. Nenhuma das mensagens é obrigatória para o App funcionar; a de tema é postada mesmo a quem não escuta, e cai no vazio. A seleção de elemento (10) só acende o botão depois de `pick-ready`: App que não carrega o script nunca o envia, e o botão fica desabilitado com o motivo.",
+  "panelToAppPick": {
+    "$comment": "Liga (`active: true`) ou desliga o modo seleção. Enviada à origem exata do App, só depois de `appToPanelPickReady` daquele documento.",
+    "source": "volund-panel",
+    "type": "pick",
+    "fields": {
+      "active": "boolean"
+    }
+  },
+  "appToPanelPickReady": {
+    "$comment": "O script de seleção está carregado e escutando. Enviada uma vez por documento. Sem ela o painel mostra o botão de selecionar desabilitado: o App não tem como atender.",
+    "source": "volund-app",
+    "type": "pick-ready",
+    "fields": {}
+  },
+  "appToPanelPicked": {
+    "$comment": "A pessoa clicou num elemento. O clique NÃO chega à aplicação (capturado e cancelado), e o modo seleção desliga. O contorno de quem está sob o cursor é desenhado pelo próprio script, DENTRO da página (é ele que sabe onde o elemento está com rolagem e zoom); o painel só recebe o escolhido. O painel recusa a mensagem inteira acima de 4096 bytes serializados.",
+    "source": "volund-app",
+    "type": "picked",
+    "fields": {
+      "element": {
+        "selector": "Seletor CSS que acha o elemento de novo (até 512)",
+        "label": "Nome acessível ou texto do elemento (até 160); o painel compõe o rótulo com o tipo",
+        "tag": "Nome da tag em minúsculas",
+        "componentName": "Componente React dono do elemento, ou null",
+        "filePath": "Arquivo do componente, ou null (o painel tira os prefixos do empacotador)",
+        "line": "Linha no arquivo, ou null",
+        "column": "Coluna no arquivo, ou null",
+        "text": "Texto visível, encurtado (até 280)",
+        "htmlPreview": "HTML de abertura do elemento, encurtado (até 1200)",
+        "route": "Caminho + query da página",
+        "rect": "{ x, y, width, height }"
+      }
+    }
+  },
+  "appToPanelPickCancel": {
+    "$comment": "A pessoa apertou Esc dentro da página: o modo seleção desligou do lado do App.",
+    "source": "volund-app",
+    "type": "pick-cancel",
+    "fields": {}
+  }
 }

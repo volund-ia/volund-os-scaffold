@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
 
+import { ElementPicker } from "@/components/volund/element-picker";
 import { FrameBinding } from "@/components/volund/frame-binding";
 import { ThemeBinding } from "@/components/volund/theme-binding";
 import { readAuthConfig } from "@/lib/auth/config";
@@ -135,6 +136,10 @@ export default async function RootLayout({
         <Suspense fallback={null}>
           <FrameBinding parentOrigin={origin} />
         </Suspense>
+        {/* Comentar num elemento desta tela com o agente do VolundOS
+            (contrato 10). Só age dentro do quadro do painel, e só baixa o
+            seletor quando pedem: quem usa a aplicação não paga por ele. */}
+        <ElementPicker parentOrigin={origin} />
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 {
   "$comment": "Contrato da APARÊNCIA white-label que um App lê da plataforma (volund-os ↔ volund-os-scaffold). Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
   "$comment_fonte": "A fonte é a MESMA do chat embutido: cores e imagens de resolveEmbedTheme (lib/embed/theme.ts), nome e fundo de avatar de readOrgBranding (lib/branding/org-branding.ts), CSS de themeCss (lib/themes/css.ts). O chat do App é o chat embutido em modo pessoa; duas leituras da marca divergiriam na primeira mudança de regra de uma delas.",
-  "contract": 9,
+  "contract": 10,
   "method": "GET",
   "path": "/oauth/app-appearance",
   "discovery": "volund_appearance_endpoint",

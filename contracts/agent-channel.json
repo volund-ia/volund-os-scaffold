@@ -1,7 +1,7 @@
 {
   "$comment": "Contrato do CANAL DE AGENTES entre a plataforma (volund-os) e o scaffold dos Apps (volund-os-scaffold). Descreve como a aplicação publicada atravessa a fronteira de audiência para falar com a plataforma em nome de quem está usando ela — e o que ela recebe de volta. Versionado com o mesmo número de contrato do scaffold. Ver contracts/README.md.",
   "$comment_v9": "O contrato 9 troca o chat PRÓPRIO do artefato (rotas de proxy em app/api/volund/ e componentes em components/volund/) pelo chat EMBUTIDO do VolundOS em modo pessoa: o servidor do App cria a sessão em `embedSession` com o token da troca, e a tela põe o `embed_url` num <iframe>. A troca e o roteiro não mudam. O bloco `proxy` virou `legacyProxy` (só vale para quem ficou no contrato ≤ 8), e `headless` registra que o @volund-ia/sdk segue para uso de servidor.",
-  "contract": 9,
+  "contract": 10,
   "exchange": {
     "$comment": "RFC 8693. O App troca o access token da SESSÃO de quem está usando a aplicação (aud = volund:app:<id>) por um token de PLATAFORMA (aud = volund:platform:api). O sujeito continua sendo a pessoa; o `act` diz que foi este App que carregou. Autenticado com o segredo do App, no servidor — o token trocado nunca chega ao navegador.",
     "endpoint": "token_endpoint do documento de descoberta OIDC",
